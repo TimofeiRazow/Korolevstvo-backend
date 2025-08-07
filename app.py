@@ -4,10 +4,9 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager
 from config import Config
-from models import Admin
+from models import db, Admin
 
 # Инициализация расширений
-db = SQLAlchemy()
 migrate = Migrate()
 jwt = JWTManager()
 
@@ -42,19 +41,6 @@ def create_app():
     app.register_blueprint(analytics_bp, url_prefix='/api/analytics')
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     
-    @app.before_first_request
-    def create_super_admin():
-        if not Admin.query.filter_by(role='super_admin').first():
-            super_admin = Admin(
-                name='Супер Администратор',
-                email='admin@prazdnikvdom.kz',
-                role='super_admin'
-            )
-            super_admin.set_password('admin123')  # Изменить в продакшене!
-            
-            db.session.add(super_admin)
-            db.session.commit()
-            print("Создан суперадминистратор: admin@prazdnikvdom.kz / admin123")
     # Главная страница API
     @app.route('/api/')
     def index():
@@ -66,12 +52,10 @@ def create_app():
     
     return app
 
-if __name__ == '__main__':
-    app = create_app()
-    app.run(debug=True)
-
 # Пока что не работает
 def seed_admins():
+    
+    from models import Admin
     """Создание тестовых администраторов"""
     if Admin.query.count() > 0:
         return
@@ -112,3 +96,10 @@ def seed_admins():
     except Exception as e:
         db.session.rollback()
         print(f"Ошибка при создании админов: {e}")
+
+if __name__ == '__main__':
+    app = create_app()
+    with app.app_context():
+        db.create_all()
+        seed_admins()  # безопасный вызов
+    app.run(debug=True)
