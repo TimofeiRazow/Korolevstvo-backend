@@ -105,3 +105,31 @@ def validate_service_request(data):
         errors.append('Описание должно содержать минимум 20 символов')
     
     return errors
+
+
+def validate_admin_data(data):
+    """Валидация данных администратора"""
+    errors = []
+    
+    # Проверка имени
+    if not data.get('name') or len(data['name'].strip()) < 2:
+        errors.append('Имя должно содержать минимум 2 символа')
+    
+    # Проверка email
+    if not data.get('email'):
+        errors.append('Email обязателен')
+    elif not validate_email(data['email']):
+        errors.append('Неверный формат email')
+    
+    # Проверка пароля
+    if not data.get('password'):
+        errors.append('Пароль обязателен')
+    elif len(data['password']) < 6:
+        errors.append('Пароль должен содержать минимум 6 символов')
+    
+    # Проверка роли
+    valid_roles = ['admin', 'manager', 'editor', 'super_admin']
+    if data.get('role') and data['role'] not in valid_roles:
+        errors.append('Недопустимая роль')
+    
+    return errors
