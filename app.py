@@ -4,9 +4,9 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager
 from config import Config
+from models import db, Admin
 
 # Инициализация расширений
-db = SQLAlchemy()
 migrate = Migrate()
 jwt = JWTManager()
 
@@ -21,6 +21,7 @@ def create_app():
     CORS(app)
     
     # Регистрация blueprints
+    from routes.auth import auth_bp
     from routes.services import services_bp
     from routes.bookings import bookings_bp
     from routes.reviews import reviews_bp
@@ -38,6 +39,7 @@ def create_app():
     app.register_blueprint(contact_bp, url_prefix='/api/contact')
     app.register_blueprint(admin_bp, url_prefix='/api/admin')
     app.register_blueprint(analytics_bp, url_prefix='/api/analytics')
+    app.register_blueprint(auth_bp, url_prefix='/api/auth')
     
     # Главная страница API
     @app.route('/api/')
@@ -50,6 +52,54 @@ def create_app():
     
     return app
 
+# Пока что не работает
+def seed_admins():
+    
+    from models import Admin
+    """Создание тестовых администраторов"""
+    if Admin.query.count() > 0:
+        return
+    
+    # Супер-администратор
+    super_admin = Admin(
+        name='Ольга Иванова',
+        email='admin@prazdnikvdom.kz',
+        role='super_admin'
+    )
+    super_admin.set_password('admin123')
+    db.session.add(super_admin)
+    
+    # Обычный администратор
+    admin = Admin(
+        name='Елена Петрова',
+        email='manager@prazdnikvdom.kz',
+        role='admin'
+    )
+    admin.set_password('manager123')
+    db.session.add(admin)
+    
+    # Менеджер
+    manager = Admin(
+        name='Анна Сидорова',
+        email='editor@prazdnikvdom.kz',
+        role='manager'
+    )
+    manager.set_password('editor123')
+    db.session.add(manager)
+    
+    try:
+        db.session.commit()
+        print("Тестовые администраторы созданы:")
+        print("- admin@prazdnikvdom.kz / admin123 (супер-админ)")
+        print("- manager@prazdnikvdom.kz / manager123 (админ)")
+        print("- editor@prazdnikvdom.kz / editor123 (менеджер)")
+    except Exception as e:
+        db.session.rollback()
+        print(f"Ошибка при создании админов: {e}")
+
 if __name__ == '__main__':
     app = create_app()
+    with app.app_context():
+        db.create_all()
+        seed_admins()  # безопасный вызов
     app.run(debug=True)

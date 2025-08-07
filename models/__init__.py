@@ -1,9 +1,46 @@
 # models/__init__.py
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+from werkzeug.security import generate_password_hash, check_password_hash
 
 db = SQLAlchemy()
 
+class Admin(db.Model):
+    __tablename__ = 'admins'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+    role = db.Column(db.String(50), default='admin')  # admin, manager, editor
+    active = db.Column(db.Boolean, default=True)
+    last_login = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey('admins.id'))
+    
+    def set_password(self, password):
+        """Хешировать пароль"""
+        self.password_hash = generate_password_hash(password)
+    
+    def check_password(self, password):
+        """Проверить пароль"""
+        return check_password_hash(self.password_hash, password)
+    
+    def update_last_login(self):
+        """Обновить время последнего входа"""
+        self.last_login = datetime.utcnow()
+        db.session.commit()
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'email': self.email,
+            'role': self.role,
+            'active': self.active,
+            'last_login': self.last_login.isoformat() if self.last_login else None,
+            'created_at': self.created_at.isoformat()
+        }
 # models/service.py
 class Service(db.Model):
     __tablename__ = 'services'
