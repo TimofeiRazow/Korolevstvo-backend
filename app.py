@@ -77,9 +77,7 @@ def seed_admins():
     try:
         db.session.commit()
         print("Тестовые администраторы созданы:")
-        print("- admin@prazdnikvdom.kz / admin123 (супер-админ)")
         print("- manager@prazdnikvdom.kz / manager123 (админ)")
-        print("- editor@prazdnikvdom.kz / editor123 (менеджер)")
     except Exception as e:
         db.session.rollback()
         print(f"Ошибка при создании админов: {e}")
