@@ -1,7 +1,8 @@
 # models/__init__.py
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy import func
 
 db = SQLAlchemy()
 
@@ -41,6 +42,7 @@ class Admin(db.Model):
             'last_login': self.last_login.isoformat() if self.last_login else None,
             'created_at': self.created_at.isoformat()
         }
+# models/service.py
 class Service(db.Model):
     __tablename__ = 'services'
     
@@ -238,142 +240,177 @@ class Review(db.Model):
             }
         
         return data
-    
-    def to_dict_admin(self):
-        """Полная информация для админки"""
-        return self.to_dict(include_personal_info=True)
-    
-    def to_dict_public(self):
-        """Публичная информация без персональных данных"""
-        return self.to_dict(include_personal_info=False)
-    
-    def mark_helpful(self):
-        """Отметить отзыв как полезный"""
-        self.helpful_count += 1
-        db.session.commit()
-    
-    def toggle_featured(self):
-        """Переключить статус избранного"""
-        self.featured = not self.featured
-        self.updated_at = datetime.utcnow()
-        db.session.commit()
-    
-    def approve(self):
-        """Одобрить отзыв"""
-        self.approved = True
-        self.updated_at = datetime.utcnow()
-        db.session.commit()
-    
-    def reject(self):
-        """Отклонить отзыв (удалить)"""
-        db.session.delete(self)
-        db.session.commit()
-    
-    @classmethod
-    def get_stats(cls):
-        """Получить статистику отзывов"""
-        from sqlalchemy import func
-        
-        stats = db.session.query(
-            func.count(cls.id).label('total'),
-            func.count(cls.id).filter(cls.approved == True).label('approved'),
-            func.count(cls.id).filter(cls.approved == False).label('pending'),
-            func.avg(cls.rating).filter(cls.approved == True).label('avg_rating')
-        ).first()
-        
-        return {
-            'total': stats.total or 0,
-            'approved': stats.approved or 0,
-            'pending': stats.pending or 0,
-            'average_rating': round(float(stats.avg_rating), 2) if stats.avg_rating else 0
-        }
-    
-    @classmethod
-    def get_featured(cls, limit=6):
-        """Получить избранные отзывы"""
-        return cls.query.filter(
-            cls.approved == True,
-            cls.featured == True
-        ).order_by(
-            cls.rating.desc(),
-            cls.created_at.desc()
-        ).limit(limit).all()
-    
-    @classmethod
-    def get_recent_approved(cls, limit=10):
-        """Получить недавние одобренные отзывы"""
-        return cls.query.filter(
-            cls.approved == True
-        ).order_by(cls.created_at.desc()).limit(limit).all()
-    
-    @classmethod
-    def get_by_service(cls, service_id, limit=None):
-        """Получить отзывы по услуге"""
-        query = cls.query.filter(
-            cls.service_id == service_id,
-            cls.approved == True
-        ).order_by(cls.created_at.desc())
-        
-        if limit:
-            query = query.limit(limit)
-        
-        return query.all()
-    
-    @classmethod
-    def search(cls, query_text, limit=20):
-        """Поиск отзывов по тексту"""
-        from sqlalchemy import or_
-        
-        return cls.query.filter(
-            cls.approved == True,
-            or_(
-                cls.name.contains(query_text),
-                cls.text.contains(query_text),
-                cls.service_type.contains(query_text)
-            )
-        ).order_by(cls.created_at.desc()).limit(limit).all()
-    
-    def __repr__(self):
-        return f'<Review {self.id}: {self.name} - {self.rating}★>'
-    
 
-# models/portfolio.py
+# ЕДИНАЯ МОДЕЛЬ ПОРТФОЛИО (объединяет все поля из React компонента)
+# ОБНОВЛЕННАЯ МОДЕЛЬ ПОРТФОЛИО
 class Portfolio(db.Model):
     __tablename__ = 'portfolio'
     
+    # Основные поля
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
-    category = db.Column(db.String(50), nullable=False)
-    date = db.Column(db.Date, nullable=False)
-    location = db.Column(db.String(200))
-    guests = db.Column(db.String(50))
-    budget = db.Column(db.String(50))
-    rating = db.Column(db.Integer, default=5)
+    category = db.Column(db.String(50), nullable=False)  # children, wedding, corporate, anniversary, show
+    date = db.Column(db.Date, nullable=False)  # Дата мероприятия
     description = db.Column(db.Text)
-    tags = db.Column(db.JSON)
-    images = db.Column(db.JSON)
-    cover_image = db.Column(db.String(500))
-    featured = db.Column(db.Boolean, default=False)
+    budget = db.Column(db.String(50))  # Бюджет проекта (например: "250,000 ₸")
+    client = db.Column(db.String(100))  # Имя клиента
+    status = db.Column(db.String(20), default='draft')  # draft, published, archived
+    
+    # Дополнительные поля для соответствия React компонентам
+    location = db.Column(db.String(200))  # Место проведения
+    guests = db.Column(db.String(50))  # Количество гостей (например: "25 детей")
+    rating = db.Column(db.Integer, default=5)  # Рейтинг проекта (1-5)
+    tags = db.Column(db.JSON)  # Теги ['принцессы', 'disney', 'аниматоры']
+    
+    # Изображения
+    images = db.Column(db.JSON)  # Список URL изображений
+    cover_image = db.Column(db.String(500))  # URL обложки
+    photos_count = db.Column(db.Integer, default=0)  # Количество фото
+    
+    # Пакеты услуг для бронирования
+    packages = db.Column(db.JSON)  # [{"name": "Базовый", "price": "85,000 ₸", "features": [...]}, ...]
+    
+    # Статус и метрики
+    featured = db.Column(db.Boolean, default=False)  # Избранный проект
+    views = db.Column(db.Integer, default=0)  # Счетчик просмотров
+    
+    # Временные метки
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def to_dict(self, for_admin=False):
+        """Преобразование в словарь для API"""
+        data = {
+            'id': self.id,
+            'title': self.title,
+            'category': self.category,
+            'date': self.date.isoformat() if self.date else None,
+            'description': self.description,
+            'budget': self.budget,
+            'status': self.status,
+            'location': self.location,
+            'guests': self.guests,
+            'rating': self.rating,
+            'tags': self.tags or [],
+            'images': self.images or [],
+            'coverImage': self.cover_image,
+            'photos': self.photos_count,
+            'packages': self.packages or [],
+            'featured': self.featured,
+            'views': self.views,
+            'created': self.created_at.strftime('%Y-%m-%d') if self.created_at else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+        
+        # Для админки добавляем приватную информацию
+        if for_admin:
+            data.update({
+                'client': self.client,
+            })
+        
+        return data
+    
+    def increment_views(self, ip_address=None, user_agent=None):
+        """Увеличить счетчик просмотров с проверкой дубликатов"""
+        # Проверяем, не было ли просмотра с того же IP за последние 30 минут
+        if ip_address:
+            recent_view = PortfolioView.query.filter(
+                PortfolioView.portfolio_id == self.id,
+                PortfolioView.ip_address == ip_address,
+                PortfolioView.viewed_at > (datetime.utcnow() - timedelta(minutes=30))
+            ).first()
+            
+            if recent_view:
+                return False  # Не засчитываем повторный просмотр
+        
+        # Записываем новый просмотр
+        view = PortfolioView(
+            portfolio_id=self.id,
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+        db.session.add(view)
+        
+        # Увеличиваем общий счетчик
+        self.views = (self.views or 0) + 1
+        db.session.commit()
+        return True
+    
+    def update_photos_count(self):
+        """Обновить количество фото на основе списка изображений"""
+        if self.images:
+            self.photos_count = len(self.images)
+        else:
+            self.photos_count = 0
+        db.session.commit()
+    
+    @classmethod
+    def get_by_status(cls, status='published'):
+        """Получить проекты по статусу"""
+        return cls.query.filter(cls.status == status).order_by(cls.date.desc()).all()
+    
+    @classmethod
+    def get_by_category(cls, category, status='published'):
+        """Получить проекты по категории"""
+        query = cls.query.filter(cls.category == category)
+        if status:
+            query = query.filter(cls.status == status)
+        return query.order_by(cls.date.desc()).all()
+    
+    @classmethod
+    def get_featured(cls, limit=6, status='published'):
+        """Получить избранные проекты"""
+        query = cls.query.filter(cls.featured == True)
+        if status:
+            query = query.filter(cls.status == status)
+        return query.order_by(cls.date.desc()).limit(limit).all()
+    
+    @classmethod
+    def get_stats(cls):
+        """Получить статистику портфолио"""
+        total = cls.query.count()
+        published = cls.query.filter(cls.status == 'published').count()
+        draft = cls.query.filter(cls.status == 'draft').count()
+        archived = cls.query.filter(cls.status == 'archived').count()
+        
+        # Топ категории
+        categories = db.session.query(
+            cls.category,
+            func.count(cls.id).label('count')
+        ).filter(cls.status == 'published').group_by(cls.category).all()
+        
+        return {
+            'total': total,
+            'published': published,
+            'draft': draft,
+            'archived': archived,
+            'total_views': db.session.query(func.sum(cls.views)).scalar() or 0,
+            'categories': [{'name': cat, 'count': count} for cat, count in categories]
+        }
+
+
+class PortfolioView(db.Model):
+    """Модель для детального отслеживания просмотров портфолио"""
+    __tablename__ = 'portfolio_views'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    portfolio_id = db.Column(db.Integer, db.ForeignKey('portfolio.id'), nullable=False)
+    ip_address = db.Column(db.String(45))  # Поддержка IPv6
+    user_agent = db.Column(db.String(500))
+    viewed_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    portfolio = db.relationship('Portfolio', backref='view_records')
     
     def to_dict(self):
         return {
             'id': self.id,
-            'title': self.title,
-            'category': self.category,
-            'date': self.date.isoformat(),
-            'location': self.location,
-            'guests': self.guests,
-            'budget': self.budget,
-            'rating': self.rating,
-            'description': self.description,
-            'tags': self.tags,
-            'images': self.images,
-            'coverImage': self.cover_image,
-            'featured': self.featured
+            'portfolio_id': self.portfolio_id,
+            'ip_address': self.ip_address,
+            'user_agent': self.user_agent,
+            'viewed_at': self.viewed_at.isoformat() if self.viewed_at else None
         }
 
-# models/team.py
 class TeamMember(db.Model):
     __tablename__ = 'team_members'
     
