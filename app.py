@@ -63,14 +63,6 @@ def seed_admins():
     if Admin.query.count() > 0:
         return
     
-    # Супер-администратор
-    super_admin = Admin(
-        name='Ольга Иванова',
-        email='admin@prazdnikvdom.kz',
-        role='super_admin'
-    )
-    super_admin.set_password('admin123')
-    db.session.add(super_admin)
     
     # Обычный администратор
     admin = Admin(
@@ -80,15 +72,7 @@ def seed_admins():
     )
     admin.set_password('manager123')
     db.session.add(admin)
-    
-    # Менеджер
-    manager = Admin(
-        name='Анна Сидорова',
-        email='editor@prazdnikvdom.kz',
-        role='manager'
-    )
-    manager.set_password('editor123')
-    db.session.add(manager)
+
     
     try:
         db.session.commit()
