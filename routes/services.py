@@ -59,7 +59,7 @@ def get_services():
     )
     
     services = [service.to_dict() for service in pagination.items]
-    
+    print(services)
     return jsonify({
         'services': services,
         'pagination': {
