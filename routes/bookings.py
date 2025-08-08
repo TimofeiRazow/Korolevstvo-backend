@@ -51,6 +51,124 @@ def create_booking():
         db.session.rollback()
         return jsonify({'error': 'Ошибка при создании заявки'}), 500
 
+@bookings_bp.route('/', methods=['GET'])
+def get_all_bookings():
+    """Получить все заявки с фильтрацией, пагинацией и сортировкой"""
+    try:
+        # Параметры пагинации
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', 10, type=int), 100)  # Максимум 100 записей на страницу
+        
+        # Параметры фильтрации
+        status = request.args.get('status')
+        service_id = request.args.get('service_id', type=int)
+        date_from = request.args.get('date_from')
+        date_to = request.args.get('date_to')
+        search = request.args.get('search')  # Поиск по имени, телефону или email
+        
+        # Параметры сортировки
+        sort_by = request.args.get('sort_by', 'created_at')  # По умолчанию по дате создания
+        sort_order = request.args.get('sort_order', 'desc')  # desc или asc
+        
+        # Базовый запрос
+        query = Booking.query
+        
+        # Применяем фильтры
+        if status:
+            query = query.filter(Booking.status == status)
+        
+        if service_id:
+            query = query.filter(Booking.service_id == service_id)
+        
+        if date_from:
+            try:
+                date_from_obj = datetime.strptime(date_from, '%Y-%m-%d').date()
+                query = query.filter(Booking.event_date >= date_from_obj)
+            except ValueError:
+                return jsonify({'error': 'Неверный формат даты date_from. Используйте YYYY-MM-DD'}), 400
+        
+        if date_to:
+            try:
+                date_to_obj = datetime.strptime(date_to, '%Y-%m-%d').date()
+                query = query.filter(Booking.event_date <= date_to_obj)
+            except ValueError:
+                return jsonify({'error': 'Неверный формат даты date_to. Используйте YYYY-MM-DD'}), 400
+        
+        if search:
+            search_pattern = f'%{search}%'
+            query = query.filter(
+                db.or_(
+                    Booking.name.ilike(search_pattern),
+                    Booking.phone.ilike(search_pattern),
+                    Booking.email.ilike(search_pattern)
+                )
+            )
+        
+        # Применяем сортировку
+        valid_sort_fields = ['id', 'name', 'phone', 'event_date', 'event_time', 'status', 'created_at', 'updated_at']
+        if sort_by not in valid_sort_fields:
+            sort_by = 'created_at'
+        
+        sort_column = getattr(Booking, sort_by)
+        if sort_order.lower() == 'asc':
+            query = query.order_by(sort_column.asc())
+        else:
+            query = query.order_by(sort_column.desc())
+        
+        # Выполняем пагинацию
+        paginated_bookings = query.paginate(
+            page=page,
+            per_page=per_page,
+            error_out=False
+        )
+        
+        # Формируем ответ
+        bookings_data = []
+        for booking in paginated_bookings.items:
+            booking_dict = booking.to_dict()
+            bookings_data.append(booking_dict)
+        
+        # Статистика по статусам (дополнительная информация)
+        stats = db.session.query(
+            Booking.status,
+            db.func.count(Booking.id).label('count')
+        ).group_by(Booking.status).all()
+        
+        status_stats = {stat.status: stat.count for stat in stats}
+        
+        return jsonify({
+            'bookings': bookings_data,
+            'pagination': {
+                'page': paginated_bookings.page,
+                'pages': paginated_bookings.pages,
+                'per_page': paginated_bookings.per_page,
+                'total': paginated_bookings.total,
+                'has_next': paginated_bookings.has_next,
+                'has_prev': paginated_bookings.has_prev,
+                'next_num': paginated_bookings.next_num,
+                'prev_num': paginated_bookings.prev_num
+            },
+            'filters': {
+                'status': status,
+                'service_id': service_id,
+                'date_from': date_from,
+                'date_to': date_to,
+                'search': search,
+                'sort_by': sort_by,
+                'sort_order': sort_order
+            },
+            'stats': {
+                'total_bookings': paginated_bookings.total,
+                'status_breakdown': status_stats
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'error': 'Ошибка при получении заявок',
+            'details': str(e)
+        }), 500
+
 @bookings_bp.route('/<int:booking_id>', methods=['GET'])
 def get_booking(booking_id):
     """Получить заявку по ID"""

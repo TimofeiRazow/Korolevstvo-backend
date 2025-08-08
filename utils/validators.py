@@ -2,13 +2,7 @@
 import re
 from datetime import datetime, date
 
-def validate_phone(phone):
-    """Валидация номера телефона"""
-    if not phone:
-        return False
-    # Простая валидация для казахстанских номеров
-    phone_pattern = r'^(\+7|8)[\s\-]?\(?[0-9]{3}\)?[\s\-]?[0-9]{3}[\s\-]?[0-9]{2}[\s\-]?[0-9]{2}$'
-    return bool(re.match(phone_pattern, phone.replace(' ', '')))
+
 
 def validate_email(email):
     """Валидация email"""
@@ -27,8 +21,6 @@ def validate_booking_data(data):
     
     if not data.get('phone'):
         errors.append('Номер телефона обязателен')
-    elif not validate_phone(data['phone']):
-        errors.append('Неверный формат номера телефона')
     
     # Проверка email если указан
     if data.get('email') and not validate_email(data['email']):
@@ -196,8 +188,6 @@ def validate_booking_data(data):
     
     if not data.get('phone'):
         errors.append('Телефон обязателен для заполнения')
-    elif not validate_phone(data['phone']):
-        errors.append('Некорректный номер телефона')
     
     # Email если предоставлен
     if data.get('email'):
