@@ -366,12 +366,12 @@ class Portfolio(db.Model):
         return query.order_by(cls.date.desc()).limit(limit).all()
     
     @classmethod
-    def get_by_service(cls, service_id, limit=None):
-        """Получить отзывы по услуге"""
-        query = cls.query.filter(
-            cls.service_id == service_id,
-            cls.approved == True
-        ).order_by(cls.created_at.desc())
+    def get_stats(cls):
+        """Получить статистику портфолио"""
+        total = cls.query.count()
+        published = cls.query.filter(cls.status == 'published').count()
+        draft = cls.query.filter(cls.status == 'draft').count()
+        archived = cls.query.filter(cls.status == 'archived').count()
         
         if limit:
             query = query.limit(limit)
