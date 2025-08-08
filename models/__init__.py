@@ -41,7 +41,6 @@ class Admin(db.Model):
             'last_login': self.last_login.isoformat() if self.last_login else None,
             'created_at': self.created_at.isoformat()
         }
-# models/service.py
 class Service(db.Model):
     __tablename__ = 'services'
     
@@ -61,6 +60,9 @@ class Service(db.Model):
     featured = db.Column(db.Boolean, default=False)
     tags = db.Column(db.JSON)  # Теги для поиска
     packages = db.Column(db.JSON)  # Пакеты услуг
+    status = db.Column(db.String(20), default='active')  # active, inactive, draft
+    views_count = db.Column(db.Integer, default=0)  # Счетчик просмотров
+    bookings_count = db.Column(db.Integer, default=0)  # Счетчик бронирований
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -75,14 +77,60 @@ class Service(db.Model):
             'price': self.price,
             'priceDescription': self.price_description,
             'description': self.description,
-            'features': self.features,
-            'subcategories': self.subcategories,
-            'images': self.images,
+            'features': self.features or [],
+            'subcategories': self.subcategories or [],
+            'images': self.images or [],
             'coverImage': self.cover_image,
             'featured': self.featured,
-            'tags': self.tags,
-            'packages': self.packages
+            'tags': self.tags or [],
+            'packages': self.packages or [],
+            'status': self.status,
+            'viewsCount': self.views_count,
+            'bookingsCount': self.bookings_count,
+            'created': self.created_at.strftime('%Y-%m-%d') if self.created_at else None,
+            'updated': self.updated_at.strftime('%Y-%m-%d') if self.updated_at else None
         }
+    
+    def update_from_dict(self, data):
+        """Обновление модели из словаря данных"""
+        self.title = data.get('title', self.title)
+        self.category = data.get('category', self.category)
+        self.duration = data.get('duration', self.duration)
+        self.min_guests = data.get('minGuests', self.min_guests)
+        self.rating = float(data.get('rating', self.rating))
+        self.price = data.get('price', self.price)
+        self.price_description = data.get('priceDescription', self.price_description)
+        self.description = data.get('description', self.description)
+        self.cover_image = data.get('coverImage', self.cover_image)
+        self.featured = bool(data.get('featured', self.featured))
+        self.status = data.get('status', self.status)
+        
+        # Обработка списковых полей
+        if 'features' in data:
+            if isinstance(data['features'], str):
+                self.features = [f.strip() for f in data['features'].split(',') if f.strip()]
+            else:
+                self.features = data['features']
+                
+        if 'subcategories' in data:
+            if isinstance(data['subcategories'], str):
+                self.subcategories = [s.strip() for s in data['subcategories'].split(',') if s.strip()]
+            else:
+                self.subcategories = data['subcategories']
+                
+        if 'tags' in data:
+            if isinstance(data['tags'], str):
+                self.tags = [t.strip() for t in data['tags'].split(',') if t.strip()]
+            else:
+                self.tags = data['tags']
+                
+        if 'images' in data:
+            if isinstance(data['images'], str):
+                self.images = [i.strip() for i in data['images'].split(',') if i.strip()]
+            else:
+                self.images = data['images']
+        
+        self.updated_at = datetime.utcnow()
 
 # models/booking.py
 class Booking(db.Model):
@@ -288,7 +336,7 @@ class Review(db.Model):
     def __repr__(self):
         return f'<Review {self.id}: {self.name} - {self.rating}★>'
     
-    
+
 # models/portfolio.py
 class Portfolio(db.Model):
     __tablename__ = 'portfolio'

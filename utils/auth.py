@@ -12,13 +12,11 @@ def token_required(f):
         if request.method == "OPTIONS":
             return '', 204
         token = None
-        print(request.headers)
         # Проверяем заголовок Authorization
         if 'Authorization' in request.headers:
             auth_header = request.headers['Authorization']
             try:
                 token = auth_header.split(" ")[1]  # Bearer TOKEN
-                print(token)
             except IndexError:
                 return jsonify({'error': 'Неверный формат токена'}), 401
         
@@ -43,26 +41,6 @@ def admin_required(f):
     
     return decorated
 
-def super_admin_required(f):
-    """
-    Декоратор для проверки прав супер-администратора
-    """
-    @wraps(f)
-    @token_required
-    def decorated(*args, **kwargs):
-        if request.method == "OPTIONS":
-            return '', 204
-        current_admin = getattr(request, 'current_admin', None)
-        
-        if not current_admin:
-            return jsonify({'error': 'Необходимы права супер-администратора'}), 403
-        
-        if current_admin.role != 'super_admin':
-            return jsonify({'error': 'Недостаточно прав доступа'}), 403
-        
-        return f(*args, **kwargs)
-    
-    return decorated
 
 def role_required(allowed_roles):
     """
