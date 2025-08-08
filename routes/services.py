@@ -8,8 +8,10 @@ from utils.helpers import paginate_query
 
 services_bp = Blueprint('services', __name__)
 
-@services_bp.route('/', methods=['GET'])
+@services_bp.route('/', methods=['GET', 'OPTIONS'])
 def get_services():
+    if request.method == "OPTIONS":
+            return '', 204
     """Получить список услуг с фильтрацией и пагинацией"""
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 20, type=int), 100)
