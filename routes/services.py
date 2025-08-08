@@ -1,6 +1,8 @@
+# routes/services.py
 from flask import Blueprint, request, jsonify
-from sqlalchemy import or_, and_
-from models import db, Service
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from sqlalchemy import or_, and_, func
+from models import db, Service, Admin
 from utils.validators import validate_service_request
 from utils.helpers import paginate_query
 
@@ -14,8 +16,7 @@ def get_services():
     category = request.args.get('category')
     featured = request.args.get('featured', type=bool)
     search = request.args.get('search', '').strip()
-    min_price = request.args.get('min_price', type=int)
-    max_price = request.args.get('max_price', type=int)
+    status = request.args.get('status')
     sort_by = request.args.get('sort_by', 'created_at')
     sort_order = request.args.get('sort_order', 'desc')
     
@@ -28,12 +29,17 @@ def get_services():
     
     if featured:
         query = query.filter(Service.featured == True)
+        
+    if status:
+        query = query.filter(Service.status == status)
+    else:
+        # По умолчанию показываем только активные услуги для публичного API
+        query = query.filter(Service.status == 'active')
     
     if search:
         query = query.filter(or_(
             Service.title.contains(search),
-            Service.description.contains(search),
-            Service.tags.contains(search)
+            Service.description.contains(search)
         ))
     
     # Сортировка
@@ -71,9 +77,17 @@ def get_service(service_id):
     """Получить детали услуги"""
     service = Service.query.get_or_404(service_id)
     
+    # Увеличиваем счетчик просмотров
+    service.views_count += 1
+    db.session.commit()
+    
     # Получить связанные услуги той же категории
     related_services = Service.query.filter(
-        and_(Service.category == service.category, Service.id != service.id)
+        and_(
+            Service.category == service.category, 
+            Service.id != service.id,
+            Service.status == 'active'
+        )
     ).limit(4).all()
     
     return jsonify({
@@ -81,18 +95,229 @@ def get_service(service_id):
         'related_services': [s.to_dict() for s in related_services]
     })
 
-@services_bp.route('/categories', methods=['GET'])
-def get_categories():
-    """Получить список категорий с количеством услуг"""
-    from sqlalchemy import func
+# АДМИНИСТРАТИВНЫЕ МАРШРУТЫ ДЛЯ УПРАВЛЕНИЯ УСЛУГАМИ
+
+@services_bp.route('/admin', methods=['GET'])
+@jwt_required()
+def get_admin_services():
+    """Получить все услуги для админки (включая неактивные)"""
+    page = request.args.get('page', 1, type=int)
+    per_page = min(request.args.get('per_page', 20, type=int), 100)
+    category = request.args.get('category')
+    status = request.args.get('status')
+    search = request.args.get('search', '').strip()
+    sort_by = request.args.get('sort_by', 'created_at')
+    sort_order = request.args.get('sort_order', 'desc')
     
-    categories_data = db.session.query(
+    # Базовый запрос без фильтра статуса
+    query = Service.query
+    
+    # Фильтры
+    if category and category != 'all':
+        query = query.filter(Service.category == category)
+        
+    if status and status != 'all':
+        query = query.filter(Service.status == status)
+    
+    if search:
+        query = query.filter(or_(
+            Service.title.contains(search),
+            Service.description.contains(search),
+            Service.category.contains(search)
+        ))
+    
+    # Сортировка
+    sort_column = getattr(Service, sort_by, Service.created_at)
+    if sort_order == 'desc':
+        query = query.order_by(sort_column.desc())
+    else:
+        query = query.order_by(sort_column.asc())
+    
+    # Пагинация
+    pagination = query.paginate(
+        page=page, 
+        per_page=per_page, 
+        error_out=False
+    )
+    
+    services = [service.to_dict() for service in pagination.items]
+    
+    return jsonify({
+        'services': services,
+        'pagination': {
+            'page': page,
+            'per_page': per_page,
+            'total': pagination.total,
+            'pages': pagination.pages,
+            'has_next': pagination.has_next,
+            'has_prev': pagination.has_prev
+        }
+    })
+
+@services_bp.route('/admin', methods=['POST'])
+@jwt_required()
+def create_service():
+    """Создать новую услугу"""
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'Нет данных'}), 400
+    
+    # Валидация обязательных полей
+    required_fields = ['title', 'category', 'description']
+    for field in required_fields:
+        if not data.get(field):
+            return jsonify({'error': f'Поле {field} обязательно'}), 400
+    
+    try:
+        service = Service()
+        service.update_from_dict(data)
+        
+        db.session.add(service)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Услуга успешно создана',
+            'service': service.to_dict()
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Ошибка при создании услуги: {str(e)}'}), 500
+
+@services_bp.route('/admin/<int:service_id>', methods=['PUT'])
+@jwt_required()
+def update_service(service_id):
+    """Обновить услугу"""
+    service = Service.query.get_or_404(service_id)
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'Нет данных'}), 400
+    
+    try:
+        service.update_from_dict(data)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Услуга успешно обновлена',
+            'service': service.to_dict()
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Ошибка при обновлении услуги: {str(e)}'}), 500
+
+@services_bp.route('/admin/<int:service_id>', methods=['DELETE'])
+@jwt_required()
+def delete_service(service_id):
+    """Удалить услугу"""
+    service = Service.query.get_or_404(service_id)
+    
+    try:
+        db.session.delete(service)
+        db.session.commit()
+        
+        return jsonify({'message': 'Услуга успешно удалена'})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Ошибка при удалении услуги: {str(e)}'}), 500
+
+@services_bp.route('/admin/stats', methods=['GET'])
+@jwt_required()
+def get_services_stats():
+    """Получить статистику услуг для админки"""
+    total_services = Service.query.count()
+    active_services = Service.query.filter(Service.status == 'active').count()
+    featured_services = Service.query.filter(Service.featured == True).count()
+    total_views = db.session.query(func.sum(Service.views_count)).scalar() or 0
+    
+    # Статистика по категориям
+    categories_stats = db.session.query(
         Service.category,
         func.count(Service.id).label('count')
     ).group_by(Service.category).all()
     
+    return jsonify({
+        'total_services': total_services,
+        'active_services': active_services,
+        'featured_services': featured_services,
+        'total_views': total_views,
+        'categories_stats': [
+            {'category': cat, 'count': count} 
+            for cat, count in categories_stats
+        ]
+    })
+
+@services_bp.route('/admin/bulk-update', methods=['POST'])
+@jwt_required()
+def bulk_update_services():
+    """Массовое обновление услуг"""
+    data = request.get_json()
+    service_ids = data.get('service_ids', [])
+    update_data = data.get('update_data', {})
+    
+    if not service_ids or not update_data:
+        return jsonify({'error': 'Не указаны услуги или данные для обновления'}), 400
+    
+    try:
+        services = Service.query.filter(Service.id.in_(service_ids)).all()
+        
+        for service in services:
+            if 'status' in update_data:
+                service.status = update_data['status']
+            if 'featured' in update_data:
+                service.featured = update_data['featured']
+            if 'category' in update_data:
+                service.category = update_data['category']
+                
+        db.session.commit()
+        
+        return jsonify({
+            'message': f'Обновлено {len(services)} услуг',
+            'updated_count': len(services)
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Ошибка при массовом обновлении: {str(e)}'}), 500
+
+@services_bp.route('/admin/bulk-delete', methods=['POST'])
+@jwt_required()
+def bulk_delete_services():
+    """Массовое удаление услуг"""
+    data = request.get_json()
+    service_ids = data.get('service_ids', [])
+    
+    if not service_ids:
+        return jsonify({'error': 'Не указаны услуги для удаления'}), 400
+    
+    try:
+        deleted_count = Service.query.filter(Service.id.in_(service_ids)).delete(synchronize_session=False)
+        db.session.commit()
+        
+        return jsonify({
+            'message': f'Удалено {deleted_count} услуг',
+            'deleted_count': deleted_count
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Ошибка при массовом удалении: {str(e)}'}), 500
+
+# ОСТАЛЬНЫЕ СУЩЕСТВУЮЩИЕ МАРШРУТЫ
+
+@services_bp.route('/categories', methods=['GET'])
+def get_categories():
+    """Получить список категорий с количеством услуг"""
+    categories_data = db.session.query(
+        Service.category,
+        func.count(Service.id).label('count')
+    ).filter(Service.status == 'active').group_by(Service.category).all()
+    
     categories = [
-        {'id': 'all', 'name': 'Все услуги', 'count': Service.query.count()}
+        {'id': 'all', 'name': 'Все услуги', 'count': Service.query.filter(Service.status == 'active').count()}
     ]
     
     category_names = {
@@ -124,7 +349,9 @@ def get_featured_services():
     """Получить рекомендуемые услуги"""
     limit = request.args.get('limit', 6, type=int)
     
-    services = Service.query.filter(Service.featured == True).limit(limit).all()
+    services = Service.query.filter(
+        and_(Service.featured == True, Service.status == 'active')
+    ).limit(limit).all()
     
     return jsonify({
         'services': [service.to_dict() for service in services]
@@ -140,11 +367,15 @@ def search_services():
     if not query_text:
         return jsonify({'services': []})
     
-    query = Service.query.filter(or_(
-        Service.title.contains(query_text),
-        Service.description.contains(query_text),
-        Service.tags.contains(query_text)
-    ))
+    query = Service.query.filter(
+        and_(
+            or_(
+                Service.title.contains(query_text),
+                Service.description.contains(query_text)
+            ),
+            Service.status == 'active'
+        )
+    )
     
     if category and category != 'all':
         query = query.filter(Service.category == category)
@@ -155,81 +386,4 @@ def search_services():
         'services': [service.to_dict() for service in services],
         'query': query_text,
         'total_found': len(services)
-    })
-
-@services_bp.route('/calculate', methods=['POST'])
-def calculate_price():
-    """Калькулятор стоимости услуг"""
-    data = request.get_json()
-    
-    service_id = data.get('service_id')
-    guests_count = data.get('guests_count', 10)
-    duration = data.get('duration', 2)
-    extras = data.get('extras', [])
-    
-    if not service_id:
-        return jsonify({'error': 'service_id is required'}), 400
-    
-    service = Service.query.get_or_404(service_id)
-    
-    # Базовая стоимость (простая логика для демонстрации)
-    base_price = 50000  # Базовая цена в тенге
-    
-    # Расчет по количеству гостей
-    if guests_count > 10:
-        base_price += (guests_count - 10) * 2000
-    
-    # Расчет по времени
-    if duration > 2:
-        base_price += (duration - 2) * 10000
-    
-    # Дополнительные услуги
-    extras_price = 0
-    extra_services = {
-        'photo': 25000,
-        'video': 35000,
-        'decoration': 20000,
-        'music': 15000,
-        'animator': 18000
-    }
-    
-    for extra in extras:
-        extras_price += extra_services.get(extra, 0)
-    
-    total_price = base_price + extras_price
-    
-    return jsonify({
-        'service': service.to_dict(),
-        'calculation': {
-            'base_price': base_price,
-            'extras_price': extras_price,
-            'total_price': total_price,
-            'guests_count': guests_count,
-            'duration': duration,
-            'extras': extras
-        }
-    })
-
-@services_bp.route('/popular', methods=['GET'])
-def get_popular_services():
-    """Получить популярные услуги на основе количества заказов"""
-    from sqlalchemy import func
-    from models import Booking
-    
-    # Услуги с наибольшим количеством бронирований
-    popular_services = db.session.query(
-        Service,
-        func.count(Booking.id).label('bookings_count')
-    ).outerjoin(Booking).group_by(Service.id).order_by(
-        func.count(Booking.id).desc()
-    ).limit(8).all()
-    
-    services_data = []
-    for service, bookings_count in popular_services:
-        service_dict = service.to_dict()
-        service_dict['bookings_count'] = bookings_count
-        services_data.append(service_dict)
-    
-    return jsonify({
-        'services': services_data
     })
