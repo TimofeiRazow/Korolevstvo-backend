@@ -5,6 +5,9 @@ from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager
 from config import Config
 from models import db, Admin
+from flask_jwt_extended.exceptions import JWTExtendedException
+from flask import jsonify
+from werkzeug.exceptions import HTTPException
 
 # Инициализация расширений
 migrate = Migrate()
@@ -18,7 +21,7 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
-    CORS(app)
+    CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
     
     # Регистрация blueprints
     from routes.auth import auth_bp
@@ -97,9 +100,43 @@ def seed_admins():
         db.session.rollback()
         print(f"Ошибка при создании админов: {e}")
 
-if __name__ == '__main__':
-    app = create_app()
+
+app = create_app()
+
+
+@app.errorhandler(422)
+def handle_unprocessable_entity(err):
+    return jsonify({'error': '422', 'message': str(err)}), 422
+
+@app.errorhandler(JWTExtendedException)
+def handle_jwt_error(e):
+    return jsonify({'error': 'JWT Error', 'message': str(e)}), 401
+
+@app.errorhandler(HTTPException)
+def handle_http_exception(e):
+    return jsonify({'error': e.code, 'message': e.description}), e.code
+
+@jwt.expired_token_loader
+def expired_token_callback(jwt_header, jwt_payload):
+    return {'error': 'Токен истек'}, 401
+
+@jwt.invalid_token_loader
+def invalid_token_callback(error):
+    return {'error': 'Недействительный токен'}, 401
+
+@jwt.unauthorized_loader
+def missing_token_callback(error):
+    return {'error': 'Требуется авторизация'}, 401
+
+# Тестовый endpoint для проверки JWT
+@app.route('/api/test', methods=['GET'])
+def test_endpoint():
+    return {'message': 'API работает', 'status': 'ok'}
+
+if __name__ == '__main__':    
+
     with app.app_context():
         db.create_all()
         seed_admins()  # безопасный вызов
     app.run(debug=True)
+

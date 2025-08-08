@@ -36,6 +36,7 @@ def admin_login():
 @admin_bp.route('/dashboard', methods=['GET'])
 @jwt_required()
 def get_dashboard():
+    
     """Получить данные дашборда"""
     # Статистика за последние 30 дней
     thirty_days_ago = datetime.utcnow() - timedelta(days=30)
@@ -63,12 +64,13 @@ def get_dashboard():
     
     # Отзывы на модерацию
     pending_reviews = Review.query.filter(Review.approved == False).limit(5).all()
-    
+
     return jsonify({
         'stats': stats,
         'recent_bookings': [booking.to_dict() for booking in recent_bookings],
         'pending_reviews': [review.to_dict() for review in pending_reviews]
     })
+
 
 @admin_bp.route('/bookings', methods=['GET'])
 @jwt_required()

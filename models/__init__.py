@@ -106,22 +106,26 @@ class Booking(db.Model):
     service = db.relationship('Service', backref='bookings')
     
     def to_dict(self):
-        return {
-            'id': self.id,
-            'name': self.name,
-            'phone': self.phone,
-            'email': self.email,
-            'service_id': self.service_id,
-            'service_title': self.service.title if self.service else None,
-            'event_date': self.event_date.isoformat() if self.event_date else None,
-            'event_time': self.event_time.isoformat() if self.event_time else None,
-            'guests_count': self.guests_count,
-            'budget': self.budget,
-            'location': self.location,
-            'message': self.message,
-            'status': self.status,
-            'created_at': self.created_at.isoformat()
-        }
+        try:
+            return {
+                'id': self.id,
+                'name': self.name,
+                'phone': self.phone,
+                'email': self.email,
+                'service_id': self.service_id,
+                'service_title': self.service.title if self.service else None,
+                'event_date': self.event_date.isoformat() if self.event_date else None,
+                'event_time': self.event_time.isoformat() if self.event_time else None,
+                'guests_count': self.guests_count,
+                'budget': self.budget,
+                'location': self.location,
+                'message': self.message,
+                'status': self.status,
+                'created_at': self.created_at.isoformat()
+            }
+        except Exception as e:
+            print("Ошибка в to_dict:", e)
+            return {'error': str(e)}
 
 # models/review.py
 class Review(db.Model):
@@ -129,29 +133,162 @@ class Review(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(120), nullable=True)
+    phone = db.Column(db.String(20), nullable=True)
+    service_type = db.Column(db.String(100), nullable=True)
+    service_id = db.Column(db.Integer, db.ForeignKey('services.id'), nullable=True)
     rating = db.Column(db.Integer, nullable=False)
     text = db.Column(db.Text, nullable=False)
-    service_type = db.Column(db.String(100))
-    service_id = db.Column(db.Integer, db.ForeignKey('services.id'))
-    avatar = db.Column(db.String(500))
-    approved = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    avatar = db.Column(db.String(10), default='👤')
+    approved = db.Column(db.Boolean, default=False, nullable=False)
+    featured = db.Column(db.Boolean, default=False, nullable=False)  # Избранный отзыв
+    helpful_count = db.Column(db.Integer, default=0)  # Количество "полезно"
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    service = db.relationship('Service', backref='reviews')
+    # Связи
+    service = db.relationship('Service', backref='reviews', lazy=True)
     
-    def to_dict(self):
-        return {
+    def __init__(self, **kwargs):
+        super(Review, self).__init__(**kwargs)
+        if self.created_at is None:
+            self.created_at = datetime.utcnow()
+        if self.updated_at is None:
+            self.updated_at = datetime.utcnow()
+    
+    def to_dict(self, include_personal_info=False):
+        """Преобразование в словарь с возможностью скрытия персональных данных"""
+        data = {
             'id': self.id,
             'name': self.name,
-            'rating': self.rating,
-            'text': self.text,
             'service_type': self.service_type,
             'service_id': self.service_id,
+            'rating': self.rating,
+            'text': self.text,
             'avatar': self.avatar,
-            'date': self.created_at.strftime('%b %d, %Y'),
-            'approved': self.approved
+            'approved': self.approved,
+            'featured': self.featured,
+            'helpful_count': self.helpful_count,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'date': self.created_at.isoformat() if self.created_at else None  # Для обратной совместимости
         }
-
+        
+        # Добавляем персональную информацию только если запрошено (для админки)
+        if include_personal_info:
+            data.update({
+                'email': self.email,
+                'phone': self.phone
+            })
+        
+        # Добавляем информацию об услуге, если есть связь
+        if self.service:
+            data['service'] = {
+                'id': self.service.id,
+                'name': self.service.name,
+                'slug': getattr(self.service, 'slug', None)
+            }
+        
+        return data
+    
+    def to_dict_admin(self):
+        """Полная информация для админки"""
+        return self.to_dict(include_personal_info=True)
+    
+    def to_dict_public(self):
+        """Публичная информация без персональных данных"""
+        return self.to_dict(include_personal_info=False)
+    
+    def mark_helpful(self):
+        """Отметить отзыв как полезный"""
+        self.helpful_count += 1
+        db.session.commit()
+    
+    def toggle_featured(self):
+        """Переключить статус избранного"""
+        self.featured = not self.featured
+        self.updated_at = datetime.utcnow()
+        db.session.commit()
+    
+    def approve(self):
+        """Одобрить отзыв"""
+        self.approved = True
+        self.updated_at = datetime.utcnow()
+        db.session.commit()
+    
+    def reject(self):
+        """Отклонить отзыв (удалить)"""
+        db.session.delete(self)
+        db.session.commit()
+    
+    @classmethod
+    def get_stats(cls):
+        """Получить статистику отзывов"""
+        from sqlalchemy import func
+        
+        stats = db.session.query(
+            func.count(cls.id).label('total'),
+            func.count(cls.id).filter(cls.approved == True).label('approved'),
+            func.count(cls.id).filter(cls.approved == False).label('pending'),
+            func.avg(cls.rating).filter(cls.approved == True).label('avg_rating')
+        ).first()
+        
+        return {
+            'total': stats.total or 0,
+            'approved': stats.approved or 0,
+            'pending': stats.pending or 0,
+            'average_rating': round(float(stats.avg_rating), 2) if stats.avg_rating else 0
+        }
+    
+    @classmethod
+    def get_featured(cls, limit=6):
+        """Получить избранные отзывы"""
+        return cls.query.filter(
+            cls.approved == True,
+            cls.featured == True
+        ).order_by(
+            cls.rating.desc(),
+            cls.created_at.desc()
+        ).limit(limit).all()
+    
+    @classmethod
+    def get_recent_approved(cls, limit=10):
+        """Получить недавние одобренные отзывы"""
+        return cls.query.filter(
+            cls.approved == True
+        ).order_by(cls.created_at.desc()).limit(limit).all()
+    
+    @classmethod
+    def get_by_service(cls, service_id, limit=None):
+        """Получить отзывы по услуге"""
+        query = cls.query.filter(
+            cls.service_id == service_id,
+            cls.approved == True
+        ).order_by(cls.created_at.desc())
+        
+        if limit:
+            query = query.limit(limit)
+        
+        return query.all()
+    
+    @classmethod
+    def search(cls, query_text, limit=20):
+        """Поиск отзывов по тексту"""
+        from sqlalchemy import or_
+        
+        return cls.query.filter(
+            cls.approved == True,
+            or_(
+                cls.name.contains(query_text),
+                cls.text.contains(query_text),
+                cls.service_type.contains(query_text)
+            )
+        ).order_by(cls.created_at.desc()).limit(limit).all()
+    
+    def __repr__(self):
+        return f'<Review {self.id}: {self.name} - {self.rating}★>'
+    
+    
 # models/portfolio.py
 class Portfolio(db.Model):
     __tablename__ = 'portfolio'

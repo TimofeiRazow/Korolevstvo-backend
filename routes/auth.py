@@ -3,6 +3,7 @@ from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identi
 from models import db, Admin
 from utils.validators import validate_admin_data
 from datetime import timedelta
+from flask_jwt_extended import decode_token, get_jwt
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -22,10 +23,10 @@ def admin_login():
     # Обновляем время последнего входа
     admin.update_last_login()
     
-    # Создаем токен
+    # Создаем токен с правильным временем жизни (24 часа)
     access_token = create_access_token(
-        identity=admin.id,
-        expires_delta=timedelta(hours=8),
+        identity=str(admin.id),
+        expires_delta=timedelta(hours=24),  # Изменено на 24 часа
         additional_claims={
             'role': admin.role,
             'email': admin.email,
@@ -43,7 +44,7 @@ def admin_login():
 @jwt_required()
 def admin_register():
     """Регистрация нового администратора (только для существующих админов)"""
-    current_admin_id = get_jwt_identity()
+    current_admin_id = int(get_jwt_identity())
     current_admin = Admin.query.get(current_admin_id)
     
     if not current_admin or current_admin.role not in ['admin', 'super_admin']:
@@ -87,35 +88,45 @@ def admin_register():
 @jwt_required()
 def get_current_admin():
     """Получить данные текущего администратора"""
-    admin_id = get_jwt_identity()
-    admin = Admin.query.get(admin_id)
+    try:
+        admin_id = int(get_jwt_identity())
+        admin = Admin.query.get(admin_id)
+        
+        if not admin or not admin.active:
+            return jsonify({'error': 'Администратор не найден или не активен'}), 404
+        
+        return jsonify({'admin': admin.to_dict()})
     
-    if not admin or not admin.active:
-        return jsonify({'error': 'Администратор не найден'}), 404
-    
-    return jsonify({'admin': admin.to_dict()})
+    except Exception as e:
+        print(f"Error in get_current_admin: {e}")
+        return jsonify({'error': 'Ошибка получения данных администратора'}), 500
 
 @auth_bp.route('/admins', methods=['GET'])
 @jwt_required()
 def get_all_admins():
     """Получить список всех администраторов"""
-    current_admin_id = get_jwt_identity()
-    current_admin = Admin.query.get(current_admin_id)
+    try:
+        current_admin_id = int(get_jwt_identity())
+        current_admin = Admin.query.get(current_admin_id)
+        
+        if not current_admin or current_admin.role not in ['admin', 'super_admin']:
+            return jsonify({'error': 'Недостаточно прав'}), 403
+        
+        admins = Admin.query.all()
+        
+        return jsonify({
+            'admins': [admin.to_dict() for admin in admins]
+        })
     
-    if not current_admin or current_admin.role not in ['admin', 'super_admin']:
-        return jsonify({'error': 'Недостаточно прав'}), 403
-    
-    admins = Admin.query.all()
-    
-    return jsonify({
-        'admins': [admin.to_dict() for admin in admins]
-    })
+    except Exception as e:
+        print(f"Error in get_all_admins: {e}")
+        return jsonify({'error': 'Ошибка получения списка администраторов'}), 500
 
 @auth_bp.route('/admins/<int:admin_id>', methods=['PUT'])
 @jwt_required()
 def update_admin(admin_id):
     """Обновить данные администратора"""
-    current_admin_id = get_jwt_identity()
+    current_admin_id = int(get_jwt_identity())
     current_admin = Admin.query.get(current_admin_id)
     
     if not current_admin:
@@ -166,7 +177,7 @@ def update_admin(admin_id):
 @jwt_required()
 def delete_admin(admin_id):
     """Удалить администратора"""
-    current_admin_id = get_jwt_identity()
+    current_admin_id = int(get_jwt_identity())
     current_admin = Admin.query.get(current_admin_id)
     
     if not current_admin or current_admin.role != 'super_admin':
@@ -186,3 +197,46 @@ def delete_admin(admin_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': 'Ошибка при удалении'}), 500
+
+# Добавлен debug endpoint без @jwt_required для тестирования
+@auth_bp.route('/debug', methods=['GET'])
+def debug():
+    """Debug endpoint для проверки JWT токенов"""
+    try:
+        from flask_jwt_extended import verify_jwt_in_request, get_jwt
+        verify_jwt_in_request()
+        claims = get_jwt()
+        return jsonify({"status": "authenticated", "claims": claims}), 200
+    except Exception as e:
+        return jsonify({"status": "unauthenticated", "error": str(e)}), 422
+
+# Добавлен endpoint для обновления токена
+@auth_bp.route('/refresh', methods=['POST'])
+@jwt_required()
+def refresh_token():
+    """Обновить токен"""
+    try:
+        current_admin_id = int(get_jwt_identity())
+        admin = Admin.query.get(current_admin_id)
+        
+        if not admin or not admin.active:
+            return jsonify({'error': 'Администратор не найден'}), 404
+        
+        new_access_token = create_access_token(
+            identity=admin.id,
+            expires_delta=timedelta(hours=24),
+            additional_claims={
+                'role': admin.role,
+                'email': admin.email,
+                'name': admin.name
+            }
+        )
+        
+        return jsonify({
+            'access_token': new_access_token,
+            'message': 'Токен обновлен'
+        })
+    
+    except Exception as e:
+        print(f"Error in refresh_token: {e}")
+        return jsonify({'error': 'Ошибка обновления токена'}), 500
