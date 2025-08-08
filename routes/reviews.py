@@ -3,7 +3,13 @@ from sqlalchemy import desc, func
 from models import db, Review, Service
 from utils.validators import validate_review_data
 from datetime import datetime
+from flask import Blueprint, request, jsonify
+from sqlalchemy import desc, func, or_, and_
+from models import db, Review, Service
+from utils.auth import admin_required, token_required
 import re
+import csv
+import io
 
 reviews_bp = Blueprint('reviews', __name__)
 
@@ -281,15 +287,7 @@ def is_spam_content(text):
 
 # routes/reviews.py - Дополнительные маршруты для CRUD операций с отзывами
 
-from flask import Blueprint, request, jsonify
-from sqlalchemy import desc, func, or_, and_
-from models import db, Review, Service
-from utils.validators import validate_review_data
-from utils.auth import admin_required, token_required
-from datetime import datetime
-import re
-import csv
-import io
+
 
 # ... (существующие маршруты остаются без изменений)
 
@@ -401,10 +399,12 @@ def create_admin_review():
         print(f"Ошибка создания отзыва: {e}")
         return jsonify({'error': 'Произошла ошибка при создании отзыва'}), 500
 
-@reviews_bp.route('/admin/reviews/<int:review_id>', methods=['PUT'])
+@reviews_bp.route('/admin/reviews/<int:review_id>', methods=['PUT', 'OPTIONS'])
 @admin_required
 def update_review(review_id):
     """Обновить отзыв"""
+    if request.method == "OPTIONS":
+        return '', 204  # preflight OK без редиректов
     review = Review.query.get_or_404(review_id)
     data = request.get_json()
     
@@ -438,10 +438,12 @@ def update_review(review_id):
         print(f"Ошибка обновления отзыва: {e}")
         return jsonify({'error': 'Произошла ошибка при обновлении отзыва'}), 500
 
-@reviews_bp.route('/admin/reviews/<int:review_id>', methods=['DELETE'])
+@reviews_bp.route('/admin/reviews/<int:review_id>', methods=['DELETE', 'OPTIONS'])
 @admin_required
 def delete_review(review_id):
     """Удалить отзыв"""
+    if request.method == "OPTIONS":
+        return '', 204  # preflight OK без редиректов
     review = Review.query.get_or_404(review_id)
     
     try:

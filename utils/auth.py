@@ -9,6 +9,8 @@ def token_required(f):
     """
     @wraps(f)
     def decorated(*args, **kwargs):
+        if request.method == "OPTIONS":
+            return '', 204
         token = None
         
         # Проверяем заголовок Authorization
@@ -64,6 +66,8 @@ def admin_required(f):
     @wraps(f)
     @token_required
     def decorated(*args, **kwargs):
+        if request.method == "OPTIONS":
+            return '', 204
         current_admin = getattr(request, 'current_admin', None)
         
         if not current_admin:
@@ -84,6 +88,8 @@ def super_admin_required(f):
     @wraps(f)
     @token_required
     def decorated(*args, **kwargs):
+        if request.method == "OPTIONS":
+            return '', 204
         current_admin = getattr(request, 'current_admin', None)
         
         if not current_admin:
