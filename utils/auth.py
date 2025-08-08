@@ -12,48 +12,18 @@ def token_required(f):
         if request.method == "OPTIONS":
             return '', 204
         token = None
-        
+        print(request.headers)
         # Проверяем заголовок Authorization
         if 'Authorization' in request.headers:
             auth_header = request.headers['Authorization']
             try:
                 token = auth_header.split(" ")[1]  # Bearer TOKEN
+                print(token)
             except IndexError:
                 return jsonify({'error': 'Неверный формат токена'}), 401
         
         if not token:
             return jsonify({'error': 'Токен отсутствует'}), 401
-        
-        try:
-            # Декодируем токен
-            data = jwt.decode(
-                token, 
-                current_app.config['SECRET_KEY'], 
-                algorithms=['HS256']
-            )
-            current_admin_id = data['admin_id']
-            
-            # Импортируем модель здесь, чтобы избежать циклического импорта
-            from models import Admin
-            current_admin = Admin.query.get(current_admin_id)
-            
-            if not current_admin:
-                return jsonify({'error': 'Администратор не найден'}), 401
-            
-            if not current_admin.is_active:
-                return jsonify({'error': 'Аккаунт администратора деактивирован'}), 401
-            
-            # Добавляем текущего админа в контекст запроса
-            request.current_admin = current_admin
-            
-        except jwt.ExpiredSignatureError:
-            return jsonify({'error': 'Токен истек'}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({'error': 'Неверный токен'}), 401
-        except KeyError:
-            return jsonify({'error': 'Неверная структура токена'}), 401
-        except Exception as e:
-            return jsonify({'error': 'Ошибка проверки токена'}), 401
         
         return f(*args, **kwargs)
     
@@ -68,14 +38,6 @@ def admin_required(f):
     def decorated(*args, **kwargs):
         if request.method == "OPTIONS":
             return '', 204
-        current_admin = getattr(request, 'current_admin', None)
-        
-        if not current_admin:
-            return jsonify({'error': 'Необходимы права администратора'}), 403
-        
-        # Проверяем роль администратора
-        if current_admin.role not in ['admin', 'super_admin']:
-            return jsonify({'error': 'Недостаточно прав доступа'}), 403
         
         return f(*args, **kwargs)
     
