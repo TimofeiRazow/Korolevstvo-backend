@@ -42,6 +42,7 @@ class Admin(db.Model):
             'last_login': self.last_login.isoformat() if self.last_login else None,
             'created_at': self.created_at.isoformat()
         }
+# models/service.py
 class Service(db.Model):
     __tablename__ = 'services'
     
@@ -373,32 +374,6 @@ class Portfolio(db.Model):
         draft = cls.query.filter(cls.status == 'draft').count()
         archived = cls.query.filter(cls.status == 'archived').count()
         
-        if limit:
-            query = query.limit(limit)
-        
-        return query.all()
-    
-    @classmethod
-    def search(cls, query_text, limit=20):
-        """Поиск отзывов по тексту"""
-        from sqlalchemy import or_
-        
-        return cls.query.filter(
-            cls.approved == True,
-            or_(
-                cls.name.contains(query_text),
-                cls.text.contains(query_text),
-                cls.service_type.contains(query_text)
-            )
-        ).order_by(cls.created_at.desc()).limit(limit).all()
-    
-    def __repr__(self):
-        return f'<Review {self.id}: {self.name} - {self.rating}★>'
-    
-
-# models/portfolio.py
-class Portfolio(db.Model):
-    __tablename__ = 'portfolio'
         # Топ категории
         categories = db.session.query(
             cls.category,
