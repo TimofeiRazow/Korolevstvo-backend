@@ -1,7 +1,7 @@
 # routes/contact.py
 from flask import Blueprint, request, jsonify, current_app
 from models import db, TeamMember
-from utils.email import send_contact_message
+from utils.email_utils import send_contact_message
 
 contact_bp = Blueprint('contact', __name__)
 

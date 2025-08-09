@@ -1049,3 +1049,317 @@ class BlogComment(db.Model):
             'content': self.content,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
+# Исправленная модель TelegramUser для models/__init__.py
+
+class TelegramUser(db.Model):
+    """Модель пользователей Telegram бота"""
+    __tablename__ = 'telegram_users'
+    __table_args__ = {'extend_existing': True}  # ← ИСПРАВЛЕНИЕ для избежания конфликтов
+    
+    # Основные поля
+    id = db.Column(db.Integer, primary_key=True)
+    telegram_id = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    username = db.Column(db.String(100))
+    first_name = db.Column(db.String(100))
+    last_name = db.Column(db.String(100))
+    
+    # Контактная информация
+    phone = db.Column(db.String(20), index=True)
+    email = db.Column(db.String(120))
+    
+    # Статус и регистрация
+    is_verified = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    registration_step = db.Column(db.String(20), default='start', nullable=False)
+    
+    # Метаданные
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_activity = db.Column(db.DateTime)
+    
+    # Настройки уведомлений
+    notifications_enabled = db.Column(db.Boolean, default=True, nullable=False)
+    language = db.Column(db.String(10), default='ru', nullable=False)
+    
+    # Статистика
+    messages_sent = db.Column(db.Integer, default=0, nullable=False)
+    messages_received = db.Column(db.Integer, default=0, nullable=False)
+    
+    def __init__(self, **kwargs):
+        """Инициализация пользователя"""
+        super(TelegramUser, self).__init__(**kwargs)
+        if self.created_at is None:
+            self.created_at = datetime.utcnow()
+        if self.updated_at is None:
+            self.updated_at = datetime.utcnow()
+    
+    def __repr__(self):
+        """Строковое представление объекта"""
+        return f'<TelegramUser {self.telegram_id}: {self.first_name}>'
+    
+    def to_dict(self, include_private=False):
+        """Преобразование в словарь для API"""
+        data = {
+            'id': self.id,
+            'telegram_id': self.telegram_id,
+            'username': self.username,
+            'first_name': self.first_name,
+            'last_name': self.last_name,
+            'is_verified': self.is_verified,
+            'registration_step': self.registration_step,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'last_activity': self.last_activity.isoformat() if self.last_activity else None,
+            'notifications_enabled': self.notifications_enabled,
+            'language': self.language,
+            'messages_count': self.messages_sent + self.messages_received
+        }
+        
+        if include_private:
+            data.update({
+                'phone': self.phone,
+                'email': self.email,
+                'messages_sent': self.messages_sent,
+                'messages_received': self.messages_received
+            })
+        
+        return data
+    
+    def get_full_name(self):
+        """Получить полное имя пользователя"""
+        if self.first_name and self.last_name:
+            return f"{self.first_name} {self.last_name}"
+        elif self.first_name:
+            return self.first_name
+        elif self.last_name:
+            return self.last_name
+        elif self.username:
+            return f"@{self.username}"
+        else:
+            return f"User {self.telegram_id}"
+    
+    def get_display_name(self):
+        """Получить отображаемое имя для интерфейса"""
+        if self.first_name:
+            return self.first_name
+        elif self.username:
+            return f"@{self.username}"
+        else:
+            return f"User {self.telegram_id}"
+    
+    def update_activity(self):
+        """Обновить время последней активности"""
+        self.last_activity = datetime.utcnow()
+        self.updated_at = datetime.utcnow()
+        try:
+            db.session.commit()
+        except:
+            db.session.rollback()
+    
+    def increment_sent_messages(self):
+        """Увеличить счетчик отправленных сообщений"""
+        self.messages_sent = (self.messages_sent or 0) + 1
+        self.update_activity()
+    
+    def increment_received_messages(self):
+        """Увеличить счетчик полученных сообщений"""
+        self.messages_received = (self.messages_received or 0) + 1
+        self.update_activity()
+    
+    def set_phone(self, phone):
+        """Установить и нормализовать номер телефона"""
+        import re
+        clean_phone = re.sub(r'[^\d+]', '', phone)
+        
+        if clean_phone.startswith('8') and len(clean_phone) == 11:
+            clean_phone = '+7' + clean_phone[1:]
+        elif clean_phone.startswith('7') and len(clean_phone) == 11:
+            clean_phone = '+' + clean_phone
+        elif not clean_phone.startswith('+'):
+            clean_phone = '+' + clean_phone
+        
+        self.phone = clean_phone
+        self.updated_at = datetime.utcnow()
+    
+    def set_email(self, email):
+        """Установить и валидировать email"""
+        if email and '@' in email:
+            self.email = email.lower().strip()
+            self.updated_at = datetime.utcnow()
+            return True
+        return False
+    
+    def complete_registration(self):
+        """Завершить процесс регистрации"""
+        self.is_verified = True
+        self.registration_step = 'verified'
+        self.updated_at = datetime.utcnow()
+        try:
+            db.session.commit()
+        except:
+            db.session.rollback()
+    
+    def update_registration_step(self, step):
+        """Обновить шаг регистрации"""
+        valid_steps = ['start', 'phone', 'email', 'verified']
+        if step in valid_steps:
+            self.registration_step = step
+            self.updated_at = datetime.utcnow()
+            try:
+                db.session.commit()
+                return True
+            except:
+                db.session.rollback()
+                return False
+        return False
+    
+    def get_bookings(self):
+        """Получить заявки пользователя"""
+        if not self.phone:
+            return []
+        
+        try:
+            return Booking.query.filter_by(phone=self.phone).order_by(Booking.created_at.desc()).all()
+        except:
+            return []
+    
+    def get_bookings_count(self):
+        """Получить количество заявок пользователя"""
+        if not self.phone:
+            return 0
+        
+        try:
+            return Booking.query.filter_by(phone=self.phone).count()
+        except:
+            return 0
+    
+    def get_recent_bookings(self, limit=5):
+        """Получить последние заявки пользователя"""
+        if not self.phone:
+            return []
+        
+        try:
+            return Booking.query.filter_by(phone=self.phone).order_by(
+                Booking.created_at.desc()
+            ).limit(limit).all()
+        except:
+            return []
+    
+    def has_active_bookings(self):
+        """Проверить наличие активных заявок"""
+        if not self.phone:
+            return False
+        
+        try:
+            active_statuses = ['new', 'confirmed']
+            return Booking.query.filter(
+                Booking.phone == self.phone,
+                Booking.status.in_(active_statuses)
+            ).count() > 0
+        except:
+            return False
+    
+    def can_receive_notifications(self):
+        """Проверить, может ли пользователь получать уведомления"""
+        return (
+            self.is_verified and 
+            self.notifications_enabled and 
+            self.phone is not None
+        )
+    
+    @classmethod
+    def find_by_telegram_id(cls, telegram_id):
+        """Найти пользователя по Telegram ID"""
+        try:
+            return cls.query.filter_by(telegram_id=str(telegram_id)).first()
+        except:
+            return None
+    
+    @classmethod
+    def find_by_phone(cls, phone, verified_only=True):
+        """Найти пользователя по номеру телефона"""
+        try:
+            query = cls.query.filter_by(phone=phone)
+            if verified_only:
+                query = query.filter_by(is_verified=True)
+            return query.first()
+        except:
+            return None
+    
+    @classmethod
+    def get_verified_users(cls):
+        """Получить всех верифицированных пользователей"""
+        try:
+            return cls.query.filter_by(is_verified=True).all()
+        except:
+            return []
+    
+    @classmethod
+    def get_statistics(cls):
+        """Получить статистику пользователей"""
+        try:
+            total = cls.query.count()
+            verified = cls.query.filter_by(is_verified=True).count()
+            unverified = total - verified
+            
+            return {
+                'total': total,
+                'verified': verified,
+                'unverified': unverified,
+                'verification_rate': round((verified / total * 100), 1) if total > 0 else 0
+            }
+        except:
+            return {
+                'total': 0,
+                'verified': 0,
+                'unverified': 0,
+                'verification_rate': 0
+            }
+    
+    @classmethod
+    def create_from_telegram_data(cls, telegram_data):
+        """Создать пользователя из данных Telegram"""
+        try:
+            existing_user = cls.find_by_telegram_id(telegram_data['id'])
+            
+            if existing_user:
+                # Обновляем данные существующего пользователя
+                existing_user.username = telegram_data.get('username')
+                existing_user.first_name = telegram_data.get('first_name')
+                existing_user.last_name = telegram_data.get('last_name')
+                existing_user.updated_at = datetime.utcnow()
+                try:
+                    db.session.commit()
+                except:
+                    db.session.rollback()
+                return existing_user
+            
+            # Создаем нового пользователя
+            new_user = cls(
+                telegram_id=str(telegram_data['id']),
+                username=telegram_data.get('username'),
+                first_name=telegram_data.get('first_name'),
+                last_name=telegram_data.get('last_name'),
+                registration_step='start'
+            )
+            
+            db.session.add(new_user)
+            try:
+                db.session.commit()
+                return new_user
+            except:
+                db.session.rollback()
+                return None
+                
+        except Exception as e:
+            print(f"❌ Ошибка создания пользователя: {e}")
+            return None
+
+# Вспомогательные функции (добавьте в конец models/__init__.py)
+
+def find_telegram_user_by_phone(phone):
+    """Найти пользователя Telegram по номеру телефона"""
+    return TelegramUser.find_by_phone(phone, verified_only=True)
+
+def get_telegram_user_stats():
+    """Получить статистику пользователей Telegram"""
+    return TelegramUser.get_statistics()

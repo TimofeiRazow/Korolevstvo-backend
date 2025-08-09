@@ -1,8 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
-from werkzeug.security import check_password_hash
 from datetime import datetime, timedelta
-from models import db, Booking, Review, Service, Portfolio
+from models import db, Booking, Review, Service
 from sqlalchemy import func, desc
 
 admin_bp = Blueprint('admin', __name__)
@@ -106,25 +105,112 @@ def get_admin_bookings():
 @admin_bp.route('/bookings/<int:booking_id>', methods=['PUT'])
 @jwt_required()
 def update_booking_status(booking_id):
-    """Обновить статус заявки"""
+    """Обновить статус заявки с отправкой Telegram уведомлений"""
+    print(f"\n🔧 === АДМИН: ОБНОВЛЕНИЕ ЗАЯВКИ #{booking_id} ===")
+    
     booking = Booking.query.get_or_404(booking_id)
     data = request.get_json()
     
     new_status = data.get('status')
-    if new_status not in ['new', 'confirmed', 'cancelled', 'completed']:
+    if new_status not in ['new', 'confirmed', 'in-progress', 'cancelled', 'completed']:
         return jsonify({'error': 'Неверный статус'}), 400
     
+    print(f"📋 Заявка:")
+    print(f"   ID: {booking.id}")
+    print(f"   Имя: {booking.name}")
+    print(f"   Телефон: {booking.phone}")
+    print(f"   Старый статус: {booking.status}")
+    print(f"   Новый статус: {new_status}")
+    
     try:
+        old_status = booking.status
         booking.status = new_status
-        db.session.commit()
         
-        return jsonify({
+        # Обновляем дополнительные поля если они переданы
+        if 'event_date' in data and data['event_date']:
+            booking.event_date = datetime.strptime(data['event_date'], '%Y-%m-%d').date()
+        if 'event_time' in data and data['event_time']:
+            booking.event_time = datetime.strptime(data['event_time'], '%H:%M').time()
+        if 'location' in data:
+            booking.location = data['location']
+        if 'message' in data:
+            booking.message = data['message']
+        
+        db.session.commit()
+        print("✅ Изменения сохранены в БД")
+        
+        # Проверяем условия для отправки уведомления
+        status_changed = old_status != new_status
+        is_notifiable_status = booking.status in ['confirmed', 'in-progress', 'completed', 'cancelled']
+        
+        print(f"🔍 Проверка условий Telegram:")
+        print(f"   Статус изменился: {status_changed}")
+        print(f"   Подходящий статус: {is_notifiable_status}")
+        print(f"   Телефон есть: {bool(booking.phone)}")
+        
+        # Отправляем Telegram уведомление при изменении статуса
+        telegram_sent = False
+        if status_changed and is_notifiable_status and booking.phone:
+            print(f"📱 Отправляем Telegram уведомление...")
+            
+            try:
+                from utils.telegram_bot import send_booking_notification
+                
+                # Проверяем наличие пользователя
+                from models import TelegramUser
+                telegram_user = TelegramUser.query.filter_by(phone=booking.phone, is_verified=True).first()
+                
+                if telegram_user:
+                    print(f"👤 Пользователь найден: {telegram_user.get_display_name()}")
+                    
+                    result = send_booking_notification(booking, new_status)
+                    
+                    if result:
+                        print("🎉 Telegram уведомление отправлено УСПЕШНО!")
+                        telegram_sent = True
+                    else:
+                        print("❌ Ошибка отправки Telegram уведомления")
+                else:
+                    print(f"❌ Пользователь с телефоном {booking.phone} не зарегистрирован в Telegram")
+                    print("💡 Клиент должен написать /start боту")
+                    
+            except Exception as e:
+                print(f"❌ Исключение при отправке Telegram: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            if not status_changed:
+                print("⏭️ Статус не изменился, уведомление не нужно")
+            elif not is_notifiable_status:
+                print(f"⏭️ Статус '{new_status}' не требует уведомления")
+            elif not booking.phone:
+                print("⏭️ Нет номера телефона")
+        
+        print(f"🏁 === АДМИН: ЗАВЕРШЕНИЕ ОБНОВЛЕНИЯ #{booking_id} ===\n")
+        
+        # Формируем ответ
+        response_data = {
             'booking': booking.to_dict(),
-            'message': f'Статус изменен на {new_status}'
-        })
+            'message': f'Статус изменен на {new_status}',
+            'notifications': {
+                'telegram_sent': telegram_sent,
+                'telegram_available': bool(booking.phone)
+            }
+        }
+        
+        # Добавляем информацию для отладки
+        if telegram_sent:
+            response_data['message'] += ' ✅ Telegram уведомление отправлено'
+        elif booking.phone and status_changed and is_notifiable_status:
+            response_data['message'] += ' ⚠️ Telegram уведомление не отправлено (проверьте регистрацию клиента в боте)'
+        
+        return jsonify(response_data)
     
     except Exception as e:
         db.session.rollback()
+        print(f"💥 КРИТИЧЕСКАЯ ОШИБКА в админ-обновлении: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': 'Ошибка при обновлении'}), 500
 
 @admin_bp.route('/reviews', methods=['GET'])

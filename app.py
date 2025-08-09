@@ -36,6 +36,8 @@ def create_app():
     from routes.analytics import analytics_bp
     from routes.blog import blog_bp  # Убедитесь что импорт есть
     from routes.company_data import company_data_bp  # Импорт для company_data
+    # from routes.bot_messages import telegram_bp
+    # from routes.telegram_users import telegram_users_bp
     
     app.register_blueprint(settings_bp, url_prefix='/api/settings')
     app.register_blueprint(blog_bp, url_prefix='/api/blog')
@@ -51,9 +53,24 @@ def create_app():
     app.register_blueprint(company_data_bp, url_prefix='/api/company_data')  # Регистрация blueprint для company_data
     
     # Главная страница API
-    @app.route('/api/', methods=['GET'])
-    def api_home():
-        return jsonify({"message": "Добро пожаловать в API Королевства Чудес!"}), 200
+    @app.route('/api')
+    def api_info():
+        return jsonify({
+            'message': 'Королевство Чудес API',
+            'version': '1.0.0',
+            'endpoints': {
+                'services': '/api/services',
+                'bookings': '/api/bookings',
+                'reviews': '/api/reviews',
+                'portfolio': '/api/portfolio',
+                'team': '/api/team',
+                'contact': '/api/contact',
+                'admin': '/api/admin',
+                'analytics': '/api/analytics',
+                'telegram': '/api/telegram'
+            },
+            'telegram_bot': '@korolevstvo_chudes_bot'
+        })
 
     return app
 
