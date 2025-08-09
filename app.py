@@ -4,7 +4,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager
 from config import Config
-from models import db, Admin, BlogPost  # Добавить BlogPost
+from models import db, Admin, BlogPost, Settings  # Добавить BlogPost
 from flask_jwt_extended.exceptions import JWTExtendedException
 from werkzeug.exceptions import HTTPException
 import click  # Добавить для CLI команд
@@ -26,6 +26,7 @@ def create_app():
     # Регистрация blueprints
     from routes.auth import auth_bp
     from routes.services import services_bp
+    from routes.settings import settings_bp
     from routes.bookings import bookings_bp
     from routes.reviews import reviews_bp
     from routes.portfolio import portfolio_bp
@@ -38,6 +39,7 @@ def create_app():
     # from routes.bot_messages import telegram_bp
     # from routes.telegram_users import telegram_users_bp
     
+    app.register_blueprint(settings_bp, url_prefix='/api/settings')
     app.register_blueprint(blog_bp, url_prefix='/api/blog')
     app.register_blueprint(services_bp, url_prefix='/api/services')
     app.register_blueprint(bookings_bp, url_prefix='/api/bookings')
@@ -376,6 +378,7 @@ if __name__ == '__main__':
         db.create_all()
         seed_admins()  # Создание тестовых админов
         seed_blog_posts()
+        Settings.init_default_settings()
         # Раскомментируйте следующую строку если хотите создать примеры статей при запуске
         # seed_blog_posts()  # Создание примеров статей блога
     app.run(debug=True)

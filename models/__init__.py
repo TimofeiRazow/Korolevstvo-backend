@@ -445,13 +445,147 @@ class Settings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     key = db.Column(db.String(100), unique=True, nullable=False)
     value = db.Column(db.Text)
+    value_type = db.Column(db.String(20), default='string')  # string, boolean, json, number
+    category = db.Column(db.String(50))  # company, social, notifications, seo, integration
+    description = db.Column(db.String(255))  # Описание настройки
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+    @classmethod
+    def get_settings_dict(cls, category=None):
+        """Получить настройки в виде словаря"""
+        query = cls.query
+        if category:
+            query = query.filter(cls.category == category)
+        
+        settings = query.all()
+        result = {}
+        
+        for setting in settings:
+            # Преобразование значения в соответствии с типом
+            if setting.value_type == 'boolean':
+                result[setting.key] = setting.value.lower() in ('true', '1', 'yes')
+            elif setting.value_type == 'number':
+                try:
+                    result[setting.key] = float(setting.value) if '.' in setting.value else int(setting.value)
+                except:
+                    result[setting.key] = setting.value
+            elif setting.value_type == 'json':
+                try:
+                    import json
+                    result[setting.key] = json.loads(setting.value)
+                except:
+                    result[setting.key] = {}
+            else:
+                result[setting.key] = setting.value
+        
+        return result
+    
+    @classmethod
+    def update_setting(cls, key, value, value_type='string', category=None, description=None):
+        """Обновить или создать настройку"""
+        setting = cls.query.filter(cls.key == key).first()
+        
+        if setting:
+            setting.value = str(value) if value is not None else None
+            setting.value_type = value_type
+            setting.updated_at = datetime.utcnow()
+        else:
+            setting = cls(
+                key=key,
+                value=str(value) if value is not None else None,
+                value_type=value_type,
+                category=category,
+                description=description
+            )
+            db.session.add(setting)
+        
+        db.session.commit()
+        return setting
+    
+    @classmethod
+    def get_setting(cls, key, default=None):
+        """Получить одну настройку"""
+        setting = cls.query.filter(cls.key == key).first()
+        if not setting:
+            return default
+        
+        if setting.value_type == 'boolean':
+            return setting.value.lower() in ('true', '1', 'yes')
+        elif setting.value_type == 'number':
+            try:
+                return float(setting.value) if '.' in setting.value else int(setting.value)
+            except:
+                return setting.value
+        elif setting.value_type == 'json':
+            try:
+                import json
+                return json.loads(setting.value)
+            except:
+                return {}
+        else:
+            return setting.value
+    
+    @classmethod
+    def init_default_settings(cls):
+        """Инициализация настроек по умолчанию"""
+        defaults = [
+            # Компания
+            ('company_name', 'Королевство Чудес', 'string', 'company', 'Название компании'),
+            ('company_email', 'info@prazdnikvdom.kz', 'string', 'company', 'Email компании'),
+            ('company_phone', '+7 (777) 123-45-67', 'string', 'company', 'Основной телефон'),
+            ('whatsapp_phone', '+7 (777) 987-65-43', 'string', 'company', 'WhatsApp номер'),
+            ('company_address', 'г. Петропавловск, ул. Ленина, 123', 'string', 'company', 'Адрес компании'),
+            ('company_description', 'Профессиональная организация праздников и мероприятий', 'string', 'company', 'Описание компании'),
+            
+            # Социальные сети
+            ('social_instagram', 'https://instagram.com/korolevstvo_chudes', 'string', 'social', 'Instagram'),
+            ('social_facebook', '', 'string', 'social', 'Facebook'),
+            ('social_youtube', '', 'string', 'social', 'YouTube'),
+            ('social_telegram', '', 'string', 'social', 'Telegram'),
+            
+            # Уведомления
+            ('email_notifications', 'true', 'boolean', 'notifications', 'Email уведомления'),
+            ('telegram_notifications', 'false', 'boolean', 'notifications', 'Telegram уведомления'),
+            ('sms_notifications', 'false', 'boolean', 'notifications', 'SMS уведомления'),
+            ('notification_email', 'admin@prazdnikvdom.kz', 'string', 'notifications', 'Email для уведомлений'),
+            
+            # SEO
+            ('site_title', 'Организация праздников в Петропавловске - Королевство Чудес', 'string', 'seo', 'Заголовок сайта'),
+            ('site_description', 'Профессиональная организация праздников в Петропавловске. Детские дни рождения, свадьбы, корпоративы.', 'string', 'seo', 'Описание сайта'),
+            ('site_keywords', 'праздники петропавловск, аниматоры, организация свадеб', 'string', 'seo', 'Ключевые слова'),
+            ('google_analytics_id', '', 'string', 'seo', 'Google Analytics ID'),
+            ('yandex_metrica_id', '', 'string', 'seo', 'Яндекс.Метрика ID'),
+            
+            # Интеграции
+            ('kaspi_api_key', '', 'string', 'integration', 'API ключ Kaspi'),
+            ('one_c_url', '', 'string', 'integration', 'URL сервера 1C'),
+            ('smtp_server', '', 'string', 'integration', 'SMTP сервер'),
+            ('smtp_port', '', 'string', 'integration', 'SMTP порт'),
+        ]
+        
+        for key, value, value_type, category, description in defaults:
+            if not cls.query.filter(cls.key == key).first():
+                setting = cls(
+                    key=key,
+                    value=value,
+                    value_type=value_type,
+                    category=category,
+                    description=description
+                )
+                db.session.add(setting)
+        
+        db.session.commit()
+    
     def to_dict(self):
         return {
+            'id': self.id,
             'key': self.key,
-            'value': self.value
+            'value': self.value,
+            'value_type': self.value_type,
+            'category': self.category,
+            'description': self.description,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
 
 class BlogPost(db.Model):
