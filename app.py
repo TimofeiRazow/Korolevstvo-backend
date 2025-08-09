@@ -35,6 +35,7 @@ def create_app():
     from routes.admin import admin_bp
     from routes.analytics import analytics_bp
     from routes.blog import blog_bp  # Убедитесь что импорт есть
+    from routes.company_data import company_data_bp  # Импорт для company_data
     
     app.register_blueprint(settings_bp, url_prefix='/api/settings')
     app.register_blueprint(blog_bp, url_prefix='/api/blog')
@@ -47,10 +48,13 @@ def create_app():
     app.register_blueprint(admin_bp, url_prefix='/api/admin')
     app.register_blueprint(analytics_bp, url_prefix='/api/analytics')
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
+    app.register_blueprint(company_data_bp, url_prefix='/api/company_data')  # Регистрация blueprint для company_data
     
     # Главная страница API
-    
-    
+    @app.route('/api/', methods=['GET'])
+    def api_home():
+        return jsonify({"message": "Добро пожаловать в API Королевства Чудес!"}), 200
+
     return app
 
 # ДОБАВИТЬ: Утилитные функции для блога
