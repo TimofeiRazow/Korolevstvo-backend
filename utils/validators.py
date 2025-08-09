@@ -496,3 +496,101 @@ def sanitize_review_data(data: dict) -> dict:
             sanitized['service_id'] = None
     
     return sanitized
+
+
+# Добавить эти функции к существующим валидаторам в utils/validators.py
+
+def validate_blog_post(data, is_update=False):
+    """Валидация данных статьи блога"""
+    errors = []
+    
+    # Обязательные поля для создания
+    if not is_update:
+        required_fields = ['title', 'content', 'category']
+        for field in required_fields:
+            if not data.get(field) or not data[field].strip():
+                errors.append(f'Поле "{field}" обязательно для заполнения')
+    
+    # Валидация заголовка
+    if 'title' in data:
+        title = data['title'].strip()
+        if len(title) < 5:
+            errors.append('Заголовок должен содержать минимум 5 символов')
+        elif len(title) > 200:
+            errors.append('Заголовок не должен превышать 200 символов')
+    
+    # Валидация содержимого
+    if 'content' in data:
+        content = data['content'].strip()
+        if len(content) < 50:
+            errors.append('Содержимое статьи должно содержать минимум 50 символов')
+        elif len(content) > 50000:
+            errors.append('Содержимое статьи не должно превышать 50000 символов')
+    
+    # Валидация категории
+    if 'category' in data:
+        valid_categories = ['советы', 'кейсы', 'тренды', 'сезонное', 'новости', 'обзоры']
+        if data['category'] not in valid_categories:
+            errors.append(f'Недопустимая категория. Доступные: {", ".join(valid_categories)}')
+    
+    # Валидация статуса
+    if 'status' in data:
+        valid_statuses = ['draft', 'published', 'scheduled', 'archived']
+        if data['status'] not in valid_statuses:
+            errors.append(f'Недопустимый статус. Доступные: {", ".join(valid_statuses)}')
+    
+    # Валидация slug
+    if 'slug' in data and data['slug']:
+        slug = data['slug'].strip()
+        import re
+        if not re.match(r'^[a-z0-9-]+$', slug):
+            errors.append('URL должен содержать только строчные буквы, цифры и дефисы')
+        elif len(slug) < 3:
+            errors.append('URL должен содержать минимум 3 символа')
+        elif len(slug) > 250:
+            errors.append('URL не должен превышать 250 символов')
+    
+    # Валидация краткого описания
+    if 'excerpt' in data and data['excerpt']:
+        excerpt = data['excerpt'].strip()
+        if len(excerpt) > 500:
+            errors.append('Краткое описание не должно превышать 500 символов')
+    
+    # Валидация мета-тегов
+    if 'meta_title' in data and data['meta_title']:
+        meta_title = data['meta_title'].strip()
+        if len(meta_title) > 60:
+            errors.append('Meta Title не должен превышать 60 символов')
+    
+    if 'meta_description' in data and data['meta_description']:
+        meta_description = data['meta_description'].strip()
+        if len(meta_description) > 160:
+            errors.append('Meta Description не должно превышать 160 символов')
+    
+    # Валидация URL изображений
+    if 'featured_image' in data and data['featured_image']:
+        if not is_valid_url(data['featured_image']):
+            errors.append('Некорректный URL главного изображения')
+    
+    # Валидация имени автора
+    if 'author_name' in data:
+        author_name = data['author_name'].strip()
+        if len(author_name) < 2:
+            errors.append('Имя автора должно содержать минимум 2 символа')
+        elif len(author_name) > 100:
+            errors.append('Имя автора не должно превышать 100 символов')
+    
+    return len(errors) == 0, errors
+
+
+def is_valid_url(url):
+    """Проверка корректности URL"""
+    import re
+    url_pattern = re.compile(
+        r'^https?://'  # http:// или https://
+        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # домен
+        r'localhost|'  # localhost
+        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # IP
+        r'(?::\d+)?'  # порт
+        r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+    return url_pattern.match(url) is not None

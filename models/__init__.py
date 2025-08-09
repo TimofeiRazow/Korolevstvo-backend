@@ -453,3 +453,465 @@ class Settings(db.Model):
             'key': self.key,
             'value': self.value
         }
+
+class BlogPost(db.Model):
+    __tablename__ = 'blog_posts'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    slug = db.Column(db.String(250), unique=True, nullable=False)
+    category = db.Column(db.String(50), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    excerpt = db.Column(db.Text)
+    tags = db.Column(db.JSON)  # Список тегов
+    status = db.Column(db.String(20), default='draft')  # draft, published, scheduled, archived
+    featured = db.Column(db.Boolean, default=False)
+    
+    # SEO поля
+    meta_title = db.Column(db.String(60))
+    meta_description = db.Column(db.String(160))
+    
+    # Изображения
+    featured_image = db.Column(db.String(500))  # URL главного изображения
+    gallery = db.Column(db.JSON)  # Дополнительные изображения
+    
+    # Автор
+    author_id = db.Column(db.Integer, db.ForeignKey('admins.id'), nullable=False)
+    author_name = db.Column(db.String(100), nullable=False)  # Публичное имя автора
+    
+    # Метрики
+    views_count = db.Column(db.Integer, default=0)
+    likes_count = db.Column(db.Integer, default=0)
+    shares_count = db.Column(db.Integer, default=0)
+    
+    # Настройки публикации
+    scheduled_date = db.Column(db.DateTime)  # Для отложенной публикации
+    published_at = db.Column(db.DateTime)
+    
+    # Временные метки
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Связи
+    author = db.relationship('Admin', backref='blog_posts', lazy=True)
+    
+    def __init__(self, **kwargs):
+        super(BlogPost, self).__init__(**kwargs)
+        if not self.slug and self.title:
+            self.slug = self.generate_slug(self.title)
+        if self.status == 'published' and not self.published_at:
+            self.published_at = datetime.utcnow()
+    
+    @staticmethod
+    def generate_slug(title):
+        """Генерация slug из заголовка"""
+        import re
+        import unicodedata
+        
+        # Транслитерация русских букв
+        translit_dict = {
+            'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
+            'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+            'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+            'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'sch',
+            'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya'
+        }
+        
+        slug = title.lower()
+        for ru, en in translit_dict.items():
+            slug = slug.replace(ru, en)
+        
+        # Убираем все кроме букв, цифр и пробелов
+        slug = re.sub(r'[^a-zA-Z0-9\s-]', '', slug)
+        # Заменяем пробелы и множественные дефисы на один дефис
+        slug = re.sub(r'[\s-]+', '-', slug)
+        # Убираем дефисы в начале и конце
+        slug = slug.strip('-')
+        
+        return slug
+    
+    @classmethod
+    def get_stats(cls):
+        """Получить статистику блога с поддержкой разных СУБД"""
+        try:
+            total = cls.query.count()
+            published = cls.query.filter(cls.status == 'published').count()
+            draft = cls.query.filter(cls.status == 'draft').count()
+            scheduled = cls.query.filter(cls.status == 'scheduled').count()
+            archived = cls.query.filter(cls.status == 'archived').count()
+            featured = cls.query.filter(cls.featured == True, cls.status == 'published').count()
+            
+            # Топ категории
+            categories = db.session.query(
+                cls.category,
+                func.count(cls.id).label('count')
+            ).filter(cls.status == 'published').group_by(cls.category).all()
+            
+            # Общее количество просмотров
+            total_views = db.session.query(func.sum(cls.views_count)).scalar() or 0
+            
+            # Среднее количество просмотров
+            avg_views = db.session.query(func.avg(cls.views_count)).filter(
+                cls.views_count.isnot(None),
+                cls.status == 'published'
+            ).scalar() or 0
+            
+            return {
+                'total': total,
+                'published': published,
+                'draft': draft,
+                'scheduled': scheduled,
+                'archived': archived,
+                'featured': featured,
+                'total_views': int(total_views),
+                'avg_views': round(float(avg_views), 1),
+                'categories': [
+                    {
+                        'name': cat, 
+                        'count': count,
+                        'slug': cat.lower().replace(' ', '-') if cat else 'uncategorized'
+                    } 
+                    for cat, count in categories
+                ]
+            }
+        except Exception as e:
+            print(f"Error getting blog stats: {e}")
+            return {
+                'total': 0,
+                'published': 0,
+                'draft': 0,
+                'scheduled': 0,
+                'archived': 0,
+                'featured': 0,
+                'total_views': 0,
+                'avg_views': 0,
+                'categories': []
+            }
+
+    @classmethod
+    def get_monthly_stats(cls, limit_months=12):
+        """Получить статистику по месяцам с поддержкой SQLite и PostgreSQL"""
+        try:
+            # Определяем тип базы данных
+            engine_name = db.engine.name
+            
+            if engine_name == 'postgresql':
+                # Для PostgreSQL используем date_trunc
+                monthly_query = db.session.query(
+                    db.func.date_trunc('month', cls.created_at).label('month'),
+                    db.func.count(cls.id).label('posts_count'),
+                    db.func.sum(cls.views_count).label('total_views')
+                ).group_by(
+                    db.func.date_trunc('month', cls.created_at)
+                ).order_by(
+                    db.func.date_trunc('month', cls.created_at).desc()
+                ).limit(limit_months)
+            else:
+                # Для SQLite используем strftime
+                monthly_query = db.session.query(
+                    db.func.strftime('%Y-%m', cls.created_at).label('month'),
+                    db.func.count(cls.id).label('posts_count'),
+                    db.func.sum(cls.views_count).label('total_views')
+                ).group_by(
+                    db.func.strftime('%Y-%m', cls.created_at)
+                ).order_by(
+                    db.func.strftime('%Y-%m', cls.created_at).desc()
+                ).limit(limit_months)
+            
+            results = monthly_query.all()
+            
+            monthly_stats = []
+            for month, posts_count, total_views in results:
+                monthly_stats.append({
+                    'month': str(month) if month else 'N/A',
+                    'posts_count': posts_count or 0,
+                    'total_views': int(total_views) if total_views else 0
+                })
+            
+            return monthly_stats
+            
+        except Exception as e:
+            print(f"Error getting monthly stats: {e}")
+            return []
+
+    @classmethod
+    def get_top_posts(cls, limit=10, by_views=True):
+        """Получить топ статей"""
+        try:
+            if by_views:
+                query = cls.query.filter(
+                    cls.status == 'published',
+                    cls.views_count.isnot(None)
+                ).order_by(cls.views_count.desc())
+            else:
+                query = cls.query.filter(
+                    cls.status == 'published'
+                ).order_by(cls.created_at.desc())
+            
+            posts = query.limit(limit).all()
+            
+            return [
+                {
+                    'id': post.id,
+                    'title': post.title,
+                    'slug': post.slug,
+                    'category': post.category,
+                    'views_count': post.views_count or 0,
+                    'published_at': post.published_at.isoformat() if post.published_at else None,
+                    'author_name': post.author_name
+                } for post in posts
+            ]
+            
+        except Exception as e:
+            print(f"Error getting top posts: {e}")
+            return []
+
+    @classmethod
+    def search_advanced(cls, query_text, category=None, status='published', limit=20):
+        """Расширенный поиск статей"""
+        try:
+            search_filter = f"%{query_text}%"
+            
+            query = cls.query.filter(
+                db.or_(
+                    cls.title.ilike(search_filter),
+                    cls.content.ilike(search_filter),
+                    cls.excerpt.ilike(search_filter)
+                )
+            )
+            
+            if status:
+                query = query.filter(cls.status == status)
+            
+            if category:
+                query = query.filter(cls.category == category)
+            
+            posts = query.order_by(cls.published_at.desc()).limit(limit).all()
+            
+            return posts
+            
+        except Exception as e:
+            print(f"Error in advanced search: {e}")
+            return []
+    
+    def to_dict(self, include_content=True, for_admin=False):
+        """Преобразование в словарь для API"""
+        data = {
+            'id': self.id,
+            'title': self.title,
+            'slug': self.slug,
+            'category': self.category,
+            'excerpt': self.excerpt,
+            'tags': self.tags or [],
+            'status': self.status,
+            'featured': self.featured,
+            'featured_image': self.featured_image,
+            'gallery': self.gallery or [],
+            'author_name': self.author_name,
+            'views_count': self.views_count,
+            'likes_count': self.likes_count,
+            'shares_count': self.shares_count,
+            'published_at': self.published_at.isoformat() if self.published_at else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'date': self.published_at.strftime('%Y-%m-%d') if self.published_at else self.created_at.strftime('%Y-%m-%d')
+        }
+        
+        # Добавляем контент только если нужно (для списков статей может не понадобиться)
+        if include_content:
+            data['content'] = self.content
+        
+        # Для админки добавляем дополнительную информацию
+        if for_admin:
+            data.update({
+                'author_id': self.author_id,
+                'meta_title': self.meta_title,
+                'meta_description': self.meta_description,
+                'scheduled_date': self.scheduled_date.isoformat() if self.scheduled_date else None,
+            })
+        
+        return data
+    
+    def update_from_dict(self, data):
+        """Обновление модели из словаря данных"""
+        self.title = data.get('title', self.title)
+        self.category = data.get('category', self.category)
+        self.content = data.get('content', self.content)
+        self.excerpt = data.get('excerpt', self.excerpt)
+        self.status = data.get('status', self.status)
+        self.featured = bool(data.get('featured', self.featured))
+        self.featured_image = data.get('featured_image', self.featured_image)
+        self.author_name = data.get('author_name', self.author_name)
+        self.meta_title = data.get('meta_title', self.meta_title)
+        self.meta_description = data.get('meta_description', self.meta_description)
+        
+        # Обработка slug
+        if 'slug' in data and data['slug']:
+            self.slug = data['slug']
+        elif self.title:
+            self.slug = self.generate_slug(self.title)
+        
+        # Обработка списковых полей
+        if 'tags' in data:
+            if isinstance(data['tags'], str):
+                self.tags = [t.strip() for t in data['tags'].split(',') if t.strip()]
+            else:
+                self.tags = data['tags']
+        
+        if 'gallery' in data:
+            if isinstance(data['gallery'], str):
+                self.gallery = [g.strip() for g in data['gallery'].split(',') if g.strip()]
+            else:
+                self.gallery = data['gallery']
+        
+        # Обработка даты публикации
+        if data.get('status') == 'published' and not self.published_at:
+            self.published_at = datetime.utcnow()
+        elif data.get('status') != 'published':
+            self.published_at = None
+        
+        # Обработка отложенной публикации
+        if 'scheduled_date' in data:
+            if data['scheduled_date']:
+                try:
+                    self.scheduled_date = datetime.fromisoformat(data['scheduled_date'])
+                except:
+                    self.scheduled_date = None
+            else:
+                self.scheduled_date = None
+        
+        self.updated_at = datetime.utcnow()
+    
+    def increment_views(self, ip_address=None, user_agent=None):
+        """Увеличить счетчик просмотров с проверкой дубликатов"""
+        if ip_address:
+            # Проверяем, не было ли просмотра с того же IP за последние 30 минут
+            recent_view = BlogView.query.filter(
+                BlogView.blog_post_id == self.id,
+                BlogView.ip_address == ip_address,
+                BlogView.viewed_at > (datetime.utcnow() - timedelta(minutes=30))
+            ).first()
+            
+            if recent_view:
+                return False  # Не засчитываем повторный просмотр
+        
+        # Записываем новый просмотр
+        view = BlogView(
+            blog_post_id=self.id,
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+        db.session.add(view)
+        
+        # Увеличиваем общий счетчик
+        self.views_count = (self.views_count or 0) + 1
+        db.session.commit()
+        return True
+    
+    @classmethod
+    def get_published(cls, limit=None, category=None, featured=None):
+        """Получить опубликованные статьи"""
+        query = cls.query.filter(cls.status == 'published')
+        
+        if category:
+            query = query.filter(cls.category == category)
+        
+        if featured is not None:
+            query = query.filter(cls.featured == featured)
+        
+        query = query.order_by(cls.published_at.desc())
+        
+        if limit:
+            query = query.limit(limit)
+        
+        return query.all()
+    
+    @classmethod
+    def get_by_slug(cls, slug):
+        """Получить статью по slug"""
+        return cls.query.filter(
+            cls.slug == slug,
+            cls.status == 'published'
+        ).first()
+    
+    @classmethod
+    def search(cls, query_text, limit=10):
+        """Поиск статей"""
+        search_filter = f"%{query_text}%"
+        return cls.query.filter(
+            cls.status == 'published',
+            db.or_(
+                cls.title.ilike(search_filter),
+                cls.content.ilike(search_filter),
+                cls.excerpt.ilike(search_filter)
+            )
+        ).order_by(cls.published_at.desc()).limit(limit).all()
+    
+    @classmethod
+    def get_stats(cls):
+        """Получить статистику блога"""
+        total = cls.query.count()
+        published = cls.query.filter(cls.status == 'published').count()
+        draft = cls.query.filter(cls.status == 'draft').count()
+        featured = cls.query.filter(cls.featured == True, cls.status == 'published').count()
+        
+        # Топ категории
+        categories = db.session.query(
+            cls.category,
+            func.count(cls.id).label('count')
+        ).filter(cls.status == 'published').group_by(cls.category).all()
+        
+        return {
+            'total': total,
+            'published': published,
+            'draft': draft,
+            'featured': featured,
+            'total_views': db.session.query(func.sum(cls.views_count)).scalar() or 0,
+            'categories': [{'name': cat, 'count': count} for cat, count in categories]
+        }
+
+
+class BlogView(db.Model):
+    """Модель для детального отслеживания просмотров статей блога"""
+    __tablename__ = 'blog_views'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    blog_post_id = db.Column(db.Integer, db.ForeignKey('blog_posts.id'), nullable=False)
+    ip_address = db.Column(db.String(45))  # Поддержка IPv6
+    user_agent = db.Column(db.String(500))
+    viewed_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    blog_post = db.relationship('BlogPost', backref='view_records')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'blog_post_id': self.blog_post_id,
+            'ip_address': self.ip_address,
+            'user_agent': self.user_agent,
+            'viewed_at': self.viewed_at.isoformat() if self.viewed_at else None
+        }
+
+
+class BlogComment(db.Model):
+    """Модель комментариев к статьям блога (опционально)"""
+    __tablename__ = 'blog_comments'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    blog_post_id = db.Column(db.Integer, db.ForeignKey('blog_posts.id'), nullable=False)
+    author_name = db.Column(db.String(100), nullable=False)
+    author_email = db.Column(db.String(120), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    approved = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    blog_post = db.relationship('BlogPost', backref='comments')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'blog_post_id': self.blog_post_id,
+            'author_name': self.author_name,
+            'content': self.content,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }

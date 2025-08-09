@@ -342,3 +342,32 @@ def booking_stats():
         'monthly_stats': [{'month': month, 'count': count} for month, count in monthly_stats],
         'popular_services': [{'service': title, 'bookings': count} for title, count in service_stats]
     })
+
+@bookings_bp.route('/<int:booking_id>', methods=['DELETE'])
+def delete_booking(booking_id):
+    """Удалить заявку"""
+    try:
+        booking = Booking.query.get_or_404(booking_id)
+        
+        # Сохраняем данные для логирования
+        booking_info = {
+            'id': booking.id,
+            'name': booking.name,
+            'phone': booking.phone,
+            'created_at': booking.created_at.isoformat() if booking.created_at else None
+        }
+        
+        db.session.delete(booking)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Заявка успешно удалена',
+            'deleted_booking': booking_info
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'error': 'Ошибка при удалении заявки',
+            'details': str(e)
+        }), 500
