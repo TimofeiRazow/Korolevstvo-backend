@@ -3,6 +3,7 @@
 /models/__pycache__
 /routes/__pycache__
 /utils/__pycache__
-/instance/
+/instance/korolevstvo_chudes.db
 /scripts/__pycache__
 /bot_data.py
+instance/korolevstvo_chudes.db
