@@ -594,6 +594,7 @@ class BlogPost(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
     slug = db.Column(db.String(250), unique=True, nullable=False)
+    cover_image = db.Column(db.String(500))  # URL обложки
     category = db.Column(db.String(50), nullable=False)
     content = db.Column(db.Text, nullable=False)
     excerpt = db.Column(db.Text)
@@ -835,6 +836,7 @@ class BlogPost(db.Model):
             'title': self.title,
             'slug': self.slug,
             'category': self.category,
+            'cover_image': self.cover_image,
             'excerpt': self.excerpt,
             'tags': self.tags or [],
             'status': self.status,
