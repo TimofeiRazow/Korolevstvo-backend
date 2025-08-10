@@ -35,6 +35,7 @@ def get_all_settings():
 def update_settings():
     """Обновить настройки"""
     data = request.get_json()
+    print(data)
     
     if not data:
         return jsonify({'error': 'Нет данных для обновления'}), 400
@@ -61,6 +62,8 @@ def update_settings():
             # Уведомления
             'email_notifications': ('boolean', 'notifications'),
             'telegram_notifications': ('boolean', 'notifications'),
+            'telegram_chat_id': ('string', 'notifications'),
+
             'sms_notifications': ('boolean', 'notifications'),
             'notification_email': ('string', 'notifications'),
             

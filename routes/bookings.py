@@ -5,9 +5,13 @@ from datetime import datetime, date, time
 from models import db, Booking, Service
 from utils.validators import validate_booking_data
 from utils.email_utils import send_booking_notification as send_email_notification
+import asyncio
 # ПРАВИЛЬНЫЙ ИМПОРТ
-from utils.telegram_bot import send_booking_notification
 from utils.helpers import generate_booking_number
+
+from utils.telegram_integration import send_telegram_booking_notification, is_telegram_notifications_enabled
+TELEGRAM_AVAILABLE = True
+
 
 bookings_bp = Blueprint('bookings', __name__)
 
@@ -18,6 +22,7 @@ def create_booking():
     
     # Валидация данных
     errors = validate_booking_data(data)
+    print(errors)
     if errors:
         return jsonify({'errors': errors}), 400
     
@@ -47,38 +52,58 @@ def create_booking():
         print(f"🎪 Услуга: {booking.service.title if booking.service else 'Не указана'}")
         
         # Отправка email уведомлений
+        email_sent = False
+        email_error = None
         try:
             print("📧 Отправляем email...")
             send_email_notification(booking)
+            email_sent = True
             print("✅ Email отправлен")
         except Exception as e:
+            email_error = str(e)
             print(f"❌ Email ошибка: {e}")
         
-        # Отправка Telegram уведомлений
-        try:
-            print("📱 Отправляем Telegram уведомление...")
-            telegram_result = send_booking_notification(booking, 'created')
-            if telegram_result:
-                print("✅ Telegram уведомление отправлено")
-            else:
-                print("❌ Telegram уведомление не отправлено")
-        except Exception as e:
-            print(f"❌ Telegram ошибка: {e}")
-            import traceback
-            traceback.print_exc()
+        # Проверка и отправка Telegram уведомлений
+        telegram_sent = False
+        telegram_error = None
+        telegram_status = {}
+        
+        if TELEGRAM_AVAILABLE:
+            try:
+                # Проверяем все настройки Telegram
+                from utils.telegram_integration import validate_telegram_settings
+                telegram_status = validate_telegram_settings()
+                print(telegram_status)
+                print(f"📱 Проверка Telegram настроек:")
+                print(f"   - Уведомления включены: {telegram_status['notifications_enabled']}")
+                print(f"   - Chat ID настроен: {telegram_status['chat_id_configured']}")
+                print(f"   - Chat ID: {telegram_status.get('chat_id', 'Не настроен')}")
+                print(f"   - Сервис доступен: {telegram_status['service_available']}")
+                print(f"   - Готов к работе: {telegram_status['ready']}")
+                
+                asyncio.run(send_telegram_booking_notification(booking))
+ 
+                
+            except Exception as e:
+                telegram_error = str(e)
+                print(f"❌ Telegram ошибка: {e}")
+        else:
+            telegram_error = "Telegram интеграция недоступна"
+            print("⚠️ Telegram интеграция недоступнащшщшщшшщщ")
         
         print(f"🏁 === ЗАЯВКА #{booking.id} ОБРАБОТАНА ===\n")
         
         return jsonify({
             'booking': booking.to_dict(),
-            'message': 'Заявка успешно создана! Уведомления отправлены.'
+            'message': 'Заявка успешно создана!'
         }), 201
     
     except Exception as e:
         db.session.rollback()
         print(f"💥 Ошибка создания заявки: {e}")
         return jsonify({'error': 'Ошибка при создании заявки'}), 500
-
+    
+    
 @bookings_bp.route('/<int:booking_id>', methods=['PUT'])
 def update_booking(booking_id):
     """Обновить заявку с отправкой уведомлений при изменении статуса"""
@@ -122,50 +147,7 @@ def update_booking(booking_id):
         # Проверяем условия для отправки уведомления
         status_changed = old_status != booking.status
         is_notifiable_status = booking.status in ['confirmed', 'in-progress', 'completed', 'cancelled']
-        
-        print(f"🔍 Проверка условий Telegram:")
-        print(f"   Статус изменился: {status_changed}")
-        print(f"   Подходящий статус: {is_notifiable_status} (статус: {booking.status})")
-        print(f"   Телефон есть: {bool(booking.phone)}")
-        
-        # Отправляем уведомление при изменении статуса
-        if status_changed and is_notifiable_status and booking.phone:
-            print(f"📱 Условия выполнены, отправляем Telegram уведомление...")
-            
-            try:
-                # Проверяем наличие пользователя в Telegram
-                from models import TelegramUser
-                telegram_user = TelegramUser.query.filter_by(phone=booking.phone, is_verified=True).first()
-                
-                if telegram_user:
-                    print(f"👤 Пользователь Telegram найден:")
-                    print(f"   Имя: {telegram_user.get_display_name()}")
-                    print(f"   Telegram ID: {telegram_user.telegram_id}")
-                    print(f"   Верифицирован: {telegram_user.is_verified}")
-                else:
-                    print(f"❌ Пользователь с телефоном {booking.phone} не найден в Telegram")
-                    print("💡 Пользователь должен зарегистрироваться в боте")
-                
-                # Отправляем уведомление с правильным типом
-                print(f"📤 Вызываем send_booking_notification(booking, '{booking.status}')")
-                result = send_booking_notification(booking, booking.status)
-                
-                if result:
-                    print("🎉 Telegram уведомление отправлено УСПЕШНО!")
-                else:
-                    print("❌ Telegram уведомление НЕ отправлено")
-                    
-            except Exception as e:
-                print(f"❌ Исключение при отправке Telegram: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            if not status_changed:
-                print("⏭️ Статус не изменился, уведомление не нужно")
-            elif not is_notifiable_status:
-                print(f"⏭️ Статус '{booking.status}' не требует уведомления")
-            elif not booking.phone:
-                print("⏭️ Нет номера телефона")
+    
         
         print(f"🏁 === ЗАВЕРШЕНИЕ ОБНОВЛЕНИЯ #{booking_id} ===\n")
         
@@ -205,30 +187,6 @@ def quick_request():
         
         db.session.add(booking)
         db.session.commit()
-        
-        print(f"\n📞 === БЫСТРАЯ ЗАЯВКА ===")
-        print(f"📋 ID: #{booking.id}")
-        print(f"📞 Телефон: {booking.phone}")
-        
-        # Отправка уведомлений
-        try:
-            print("📧 Отправляем email...")
-            send_email_notification(booking, is_quick=True)
-            print("✅ Email отправлен")
-        except Exception as e:
-            print(f"❌ Email ошибка: {e}")
-        
-        try:
-            print("📱 Отправляем Telegram уведомление...")
-            telegram_result = send_booking_notification(booking, 'created')
-            if telegram_result:
-                print("✅ Telegram уведомление отправлено")
-            else:
-                print("❌ Telegram уведомление не отправлено")
-        except Exception as e:
-            print(f"❌ Telegram ошибка: {e}")
-        
-        print(f"🏁 === БЫСТРАЯ ЗАЯВКА #{booking.id} ОБРАБОТАНА ===\n")
         
         return jsonify({
             'booking_id': booking.id,

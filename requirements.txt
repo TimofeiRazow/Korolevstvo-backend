@@ -9,3 +9,6 @@ python-dotenv==1.0.0
 gunicorn==21.2.0
 email-validator
 requests
+aiohttp
+# Telegram Bot API
+python-telegram-bot==20.7

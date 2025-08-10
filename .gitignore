@@ -7,3 +7,7 @@
 /scripts/__pycache__
 /bot_data.py
 instance/korolevstvo_chudes.db
+/services/telegram/.env
+/services/telegram/venv
+/services/telegram/__pycache__
+
