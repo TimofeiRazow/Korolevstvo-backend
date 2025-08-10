@@ -28,11 +28,13 @@ def create_booking():
     
     try:
         # Создание новой заявки
+        print(data.get('service_title'))
         booking = Booking(
             name=data['name'],
             phone=data['phone'],
             email=data.get('email'),
             service_id=data.get('service_id'),
+            service_title=data.get('service_title'),
             event_date=datetime.strptime(data['event_date'], '%Y-%m-%d').date() if data.get('event_date') else None,
             event_time=datetime.strptime(data['event_time'], '%H:%M').time() if data.get('event_time') else None,
             guests_count=data.get('guests_count'),
@@ -49,7 +51,7 @@ def create_booking():
         print(f"📋 ID: #{booking.id}")
         print(f"👤 Имя: {booking.name}")
         print(f"📞 Телефон: {booking.phone}")
-        print(f"🎪 Услуга: {booking.service.title if booking.service else 'Не указана'}")
+        print(f"🎪 Услуга: {booking.service_title if booking.service else 'Не указана'}")
         
         # Отправка email уведомлений
         email_sent = False

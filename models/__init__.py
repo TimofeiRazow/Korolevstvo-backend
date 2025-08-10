@@ -143,6 +143,7 @@ class Booking(db.Model):
     phone = db.Column(db.String(20), nullable=False)
     email = db.Column(db.String(100))
     service_id = db.Column(db.Integer, db.ForeignKey('services.id'))
+    service_title = db.Column(db.String(100))
     event_date = db.Column(db.Date)
     event_time = db.Column(db.Time)
     guests_count = db.Column(db.Integer)
@@ -163,7 +164,7 @@ class Booking(db.Model):
                 'phone': self.phone,
                 'email': self.email,
                 'service_id': self.service_id,
-                'service_title': self.service.title if self.service else None,
+                'service_title': self.service_title if self.service_title else None,
                 'event_date': self.event_date.isoformat() if self.event_date else None,
                 'event_time': self.event_time.isoformat() if self.event_time else None,
                 'guests_count': self.guests_count,
