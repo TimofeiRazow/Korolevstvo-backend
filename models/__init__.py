@@ -1366,3 +1366,972 @@ def find_telegram_user_by_phone(phone):
 def get_telegram_user_stats():
     """Получить статистику пользователей Telegram"""
     return TelegramUser.get_statistics()
+
+
+# Добавить в models/__init__.py после существующих моделей
+
+class WarehouseInventory(db.Model):
+    """Инвентаризации склада"""
+    __tablename__ = 'warehouse_inventories'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)  # Название инвентаризации
+    description = db.Column(db.Text)
+    
+    # Статус инвентаризации
+    status = db.Column(db.String(20), default='planned')  # planned, in_progress, completed, cancelled
+    
+    # Пользователь и временные метки
+    created_by = db.Column(db.Integer, db.ForeignKey('admins.id'), nullable=False)
+    creator = db.relationship('Admin', foreign_keys=[created_by], backref='created_inventories')
+    
+    completed_by = db.Column(db.Integer, db.ForeignKey('admins.id'), nullable=True)
+    completer = db.relationship('Admin', foreign_keys=[completed_by])
+    
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'status': self.status,
+            'created_by': self.created_by,
+            'creator_name': self.creator.name if self.creator else None,
+            'completed_by': self.completed_by,
+            'completer_name': self.completer.name if self.completer else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'records_count': len(self.records)
+        }
+
+
+class WarehouseInventoryRecord(db.Model):
+    """Записи инвентаризации"""
+    __tablename__ = 'warehouse_inventory_records'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    
+    # Связи
+    inventory_id = db.Column(db.Integer, db.ForeignKey('warehouse_inventories.id'), nullable=False)
+    inventory = db.relationship('WarehouseInventory', backref='records')
+    
+    item_id = db.Column(db.Integer, db.ForeignKey('warehouse_items.id'), nullable=False)
+    item = db.relationship('WarehouseItem')
+    
+    # Количества
+    system_quantity = db.Column(db.Integer, nullable=False)  # По данным системы
+    actual_quantity = db.Column(db.Integer, nullable=True)   # Фактическое количество
+    difference = db.Column(db.Integer, default=0)            # Разница
+    
+    # Статус проверки
+    status = db.Column(db.String(20), default='pending')  # pending, checked, adjusted
+    comment = db.Column(db.Text)
+    
+    checked_at = db.Column(db.DateTime)
+    checked_by = db.Column(db.Integer, db.ForeignKey('admins.id'))
+    checker = db.relationship('Admin')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'inventory_id': self.inventory_id,
+            'item_id': self.item_id,
+            'item_name': self.item.name if self.item else None,
+            'system_quantity': self.system_quantity,
+            'actual_quantity': self.actual_quantity,
+            'difference': self.difference,
+            'status': self.status,
+            'comment': self.comment,
+            'checked_at': self.checked_at.isoformat() if self.checked_at else None,
+            'checker_name': self.checker.name if self.checker else None
+        }
+
+# В models/__init__.py - исправленная модель WarehouseItem
+
+class WarehouseItem(db.Model):
+    """Товары на складе"""
+    __tablename__ = 'warehouse_items'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    barcode = db.Column(db.String(100), unique=True, nullable=True, index=True)
+    sku = db.Column(db.String(50), unique=True, nullable=True)  # Артикул
+    description = db.Column(db.Text)
+    
+    # Характеристики товара
+    unit = db.Column(db.String(20), default='шт')  # Единица измерения
+    min_quantity = db.Column(db.Integer, default=0)  # Минимальный остаток
+    max_quantity = db.Column(db.Integer, default=1000)  # Максимальный остаток
+    cost_price = db.Column(db.Numeric(10, 2), default=0)  # Себестоимость
+    
+    # Статус и метаданные
+    status = db.Column(db.String(20), default='active')  # active, inactive, discontinued
+    current_quantity = db.Column(db.Integer, default=0)  # Текущее количество
+    reserved_quantity = db.Column(db.Integer, default=0)  # Зарезервированное количество
+    
+    # Временные метки
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_operation_at = db.Column(db.DateTime)
+
+    def to_dict(self, include_categories=True):
+        """Безопасная версия to_dict без ссылок на старое поле category"""
+        try:
+            data = {
+                'id': self.id,
+                'name': self.name or '',
+                'barcode': self.barcode,
+                'sku': self.sku,
+                'description': self.description or '',
+                'unit': self.unit or 'шт',
+                'min_quantity': self.min_quantity or 0,
+                'max_quantity': self.max_quantity or 1000,
+                'cost_price': float(self.cost_price) if self.cost_price else 0,
+                'status': self.status or 'active',
+                'current_quantity': self.current_quantity or 0,
+                'reserved_quantity': self.reserved_quantity or 0,
+                'available_quantity': (self.current_quantity or 0) - (self.reserved_quantity or 0),
+                'created_at': self.created_at.isoformat() if self.created_at else None,
+                'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+                'last_operation_at': self.last_operation_at.isoformat() if self.last_operation_at else None
+            }
+            
+            # Добавляем информацию о категориях с обработкой ошибок
+            if include_categories:
+                try:
+                    categories = self.get_categories()
+                    data['categories'] = []
+                    data['category_ids'] = []
+                    data['category_names'] = []
+                    
+                    for cat in categories:
+                        try:
+                            cat_dict = cat.to_dict()
+                            data['categories'].append(cat_dict)
+                            data['category_ids'].append(cat.id)
+                            data['category_names'].append(cat.name)
+                        except Exception as e:
+                            print(f"Ошибка преобразования категории {cat.id}: {e}")
+                            continue
+                    
+                    # Для обратной совместимости - основная категория
+                    if categories:
+                        try:
+                            main_category = categories[0]
+                            data['category'] = {
+                                'id': main_category.id,
+                                'name': main_category.name,
+                                'color': getattr(main_category, 'color', '#6366f1')
+                            }
+                            data['category_path'] = main_category.get_full_path()
+                        except Exception as e:
+                            print(f"Ошибка создания основной категории: {e}")
+                            data['category'] = None
+                            data['category_path'] = ''
+                    else:
+                        data['category'] = None
+                        data['category_path'] = ''
+                        
+                except Exception as e:
+                    print(f"Ошибка получения категорий для товара {self.id}: {e}")
+                    data['categories'] = []
+                    data['category_ids'] = []
+                    data['category_names'] = []
+                    data['category'] = None
+                    data['category_path'] = ''
+            
+            # Статусы для UI
+            data['is_low_stock'] = (self.current_quantity or 0) <= (self.min_quantity or 0)
+            data['is_out_of_stock'] = (self.current_quantity or 0) == 0
+            data['is_overstocked'] = (self.current_quantity or 0) > (self.max_quantity or 1000)
+            
+            return data
+            
+        except Exception as e:
+            print(f"Критическая ошибка в to_dict для товара {getattr(self, 'id', 'unknown')}: {e}")
+            # Возвращаем минимальный набор данных
+            return {
+                'id': getattr(self, 'id', None),
+                'name': getattr(self, 'name', 'Ошибка загрузки'),
+                'current_quantity': getattr(self, 'current_quantity', 0),
+                'unit': getattr(self, 'unit', 'шт'),
+                'status': getattr(self, 'status', 'active'),
+                'categories': [],
+                'category_names': [],
+                'category': None,
+                'category_path': '',
+                'error': str(e)
+            }
+    
+    def get_categories(self):
+        """Безопасное получение категорий товара"""
+        try:
+            # Проверяем, что таблица связи существует
+            if not hasattr(db.session, 'query'):
+                return []
+                
+            categories = db.session.query(WarehouseCategory).join(
+                WarehouseItemCategory,
+                WarehouseCategory.id == WarehouseItemCategory.category_id
+            ).filter(WarehouseItemCategory.item_id == self.id).all()
+            
+            return categories
+            
+        except Exception as e:
+            print(f"Ошибка получения категорий для товара {self.id}: {e}")
+            return []
+    
+    def add_category(self, category_id):
+        """Добавить категорию к товару"""
+        try:
+            existing = WarehouseItemCategory.query.filter(
+                WarehouseItemCategory.item_id == self.id,
+                WarehouseItemCategory.category_id == category_id
+            ).first()
+            
+            if not existing:
+                item_category = WarehouseItemCategory(
+                    item_id=self.id,
+                    category_id=category_id
+                )
+                db.session.add(item_category)
+                return True
+            return False
+        except Exception as e:
+            print(f"Ошибка добавления категории {category_id} к товару {self.id}: {e}")
+            return False
+    
+    def remove_category(self, category_id):
+        """Удалить категорию у товара"""
+        try:
+            deleted_count = WarehouseItemCategory.query.filter(
+                WarehouseItemCategory.item_id == self.id,
+                WarehouseItemCategory.category_id == category_id
+            ).delete()
+            return deleted_count > 0
+        except Exception as e:
+            print(f"Ошибка удаления категории {category_id} у товара {self.id}: {e}")
+            return False
+    
+    def set_categories(self, category_ids):
+        """Установить категории товара (заменить все существующие)"""
+        try:
+            # Удаляем все существующие связи
+            WarehouseItemCategory.query.filter(
+                WarehouseItemCategory.item_id == self.id
+            ).delete()
+            
+            # Добавляем новые связи
+            for category_id in category_ids:
+                if category_id:  # Проверяем что ID не пустой
+                    item_category = WarehouseItemCategory(
+                        item_id=self.id,
+                        category_id=category_id
+                    )
+                    db.session.add(item_category)
+            
+            return True
+        except Exception as e:
+            print(f"Ошибка установки категорий для товара {self.id}: {e}")
+            return False
+
+    def update_quantity(self, new_quantity, operation_type, reason=None, user_id=None):
+        """Обновить количество товара с записью операции"""
+        try:
+            old_quantity = self.current_quantity or 0
+            self.current_quantity = new_quantity
+            self.last_operation_at = datetime.utcnow()
+            self.updated_at = datetime.utcnow()
+            
+            # Создаем запись об операции
+            operation = WarehouseOperation(
+                item_id=self.id,
+                operation_type=operation_type,
+                quantity_before=old_quantity,
+                quantity_after=new_quantity,
+                quantity_change=new_quantity - old_quantity,
+                reason=reason,
+                user_id=user_id
+            )
+            
+            db.session.add(operation)
+            return operation
+        except Exception as e:
+            print(f"Ошибка обновления количества товара {self.id}: {e}")
+            raise
+
+    @classmethod
+    def search(cls, query, category_ids=None, status='active'):
+        """Поиск товаров с поддержкой множественных категорий"""
+        try:
+            search_query = cls.query.filter(cls.status == status)
+            
+            if category_ids:
+                # Поиск товаров, которые относятся к любой из указанных категорий
+                search_query = search_query.join(WarehouseItemCategory).filter(
+                    WarehouseItemCategory.category_id.in_(category_ids)
+                ).distinct()
+            
+            if query:
+                search_filter = f"%{query}%"
+                search_query = search_query.filter(
+                    db.or_(
+                        cls.name.ilike(search_filter),
+                        cls.barcode.ilike(search_filter),
+                        cls.sku.ilike(search_filter),
+                        cls.description.ilike(search_filter)
+                    )
+                )
+            
+            return search_query
+        except Exception as e:
+            print(f"Ошибка поиска товаров: {e}")
+            return cls.query.filter(cls.id == -1)  # Возвращаем пустой результат
+
+    @classmethod
+    def get_low_stock_items(cls):
+        """Получить товары с низким остатком"""
+        try:
+            return cls.query.filter(
+                cls.current_quantity <= cls.min_quantity,
+                cls.status == 'active'
+            ).all()
+        except Exception as e:
+            print(f"Ошибка получения товаров с низким остатком: {e}")
+            return []
+
+
+# Обновленная модель WarehouseOperation с исправлениями
+class WarehouseOperation(db.Model):
+    """История операций со складом"""
+    __tablename__ = 'warehouse_operations'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    
+    # Связи
+    item_id = db.Column(db.Integer, db.ForeignKey('warehouse_items.id'), nullable=False)
+    item = db.relationship('WarehouseItem', backref='operations')
+    user_id = db.Column(db.Integer, db.ForeignKey('admins.id'), nullable=True)
+    user = db.relationship('Admin', backref='warehouse_operations')
+    
+    # Детали операции
+    operation_type = db.Column(db.String(20), nullable=False)  # add, remove, transfer, adjust, reserve, unreserve
+    quantity_before = db.Column(db.Integer, nullable=False)
+    quantity_after = db.Column(db.Integer, nullable=False)
+    quantity_change = db.Column(db.Integer, nullable=False)  # Может быть отрицательным
+    
+    # Причина и комментарий
+    reason = db.Column(db.String(100))  # Причина операции
+    comment = db.Column(db.Text)  # Дополнительный комментарий
+    document_number = db.Column(db.String(50))  # Номер документа (накладной, заявки и т.д.)
+    
+    # Метаданные
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    ip_address = db.Column(db.String(45))  # IP адрес пользователя
+    
+    def to_dict(self, include_item=True, include_user=True):
+        """Безопасное преобразование в словарь без ссылок на старые поля"""
+        try:
+            data = {
+                'id': self.id,
+                'item_id': self.item_id,
+                'user_id': self.user_id,
+                'operation_type': self.operation_type,
+                'quantity_before': self.quantity_before,
+                'quantity_after': self.quantity_after,
+                'quantity_change': self.quantity_change,
+                'reason': self.reason,
+                'comment': self.comment,
+                'document_number': self.document_number,
+                'created_at': self.created_at.isoformat() if self.created_at else None,
+                'ip_address': self.ip_address
+            }
+            
+            if include_item and self.item:
+                try:
+                    # Получаем категории товара безопасно
+                    categories = self.item.get_categories()
+                    category_names = [cat.name for cat in categories] if categories else []
+                    
+                    data['item'] = {
+                        'id': self.item.id,
+                        'name': self.item.name,
+                        'barcode': self.item.barcode,
+                        'sku': self.item.sku,
+                        'unit': self.item.unit,
+                        'category_names': category_names
+                    }
+                    
+                    # Для обратной совместимости
+                    if categories:
+                        data['item']['category'] = categories[0].name
+                        data['item']['category_path'] = categories[0].get_full_path()
+                    else:
+                        data['item']['category'] = 'Без категории'
+                        data['item']['category_path'] = 'Без категории'
+                        
+                except Exception as e:
+                    print(f"Ошибка получения информации о товаре {self.item_id}: {e}")
+                    data['item'] = {
+                        'id': self.item.id,
+                        'name': self.item.name or 'Неизвестный товар',
+                        'category': 'Не определена',
+                        'category_names': []
+                    }
+            
+            if include_user and self.user:
+                data['user'] = {
+                    'id': self.user.id,
+                    'name': self.user.name,
+                    'email': self.user.email
+                }
+            
+            # Читаемое описание операции
+            operation_descriptions = {
+                'add': 'Поступление',
+                'remove': 'Списание',
+                'transfer': 'Перемещение',
+                'adjust': 'Корректировка',
+                'reserve': 'Резервирование',
+                'unreserve': 'Снятие резерва'
+            }
+            
+            data['operation_description'] = operation_descriptions.get(self.operation_type, self.operation_type)
+            
+            return data
+            
+        except Exception as e:
+            print(f"Ошибка преобразования операции {self.id}: {e}")
+            return {
+                'id': self.id,
+                'error': str(e),
+                'operation_type': getattr(self, 'operation_type', 'unknown'),
+                'item_id': getattr(self, 'item_id', None)
+            }
+
+# Дополнительные функции для работы с моделями
+
+# Обновленная функция в models/__init__.py
+def create_sample_warehouse_data():
+    """Создать примеры данных для склада с проверкой существования"""
+    try:
+        # Проверяем, есть ли уже данные склада
+        existing_categories = WarehouseCategory.query.count()
+        existing_items = WarehouseItem.query.count()
+        
+        if existing_categories > 0 or existing_items > 0:
+            print("✅ Данные склада уже существуют")
+            return
+        
+        print("🏗️ Создание примеров данных склада...")
+        
+        # Создаем основные категории
+        categories_data = [
+            {'name': 'Костюмы', 'color': '#ff6b6b', 'description': 'Карнавальные костюмы для всех возрастов'},
+            {'name': 'Реквизит', 'color': '#4ecdc4', 'description': 'Реквизит для праздников и мероприятий'},
+            {'name': 'Декорации', 'color': '#45b7d1', 'description': 'Декоративные элементы и фоны'},
+            {'name': 'Музыкальное оборудование', 'color': '#96ceb4', 'description': 'Звуковое оборудование'},
+            {'name': 'Игрушки', 'color': '#ffeaa7', 'description': 'Игрушки и развивающие материалы'},
+        ]
+        
+        category_objects = {}
+        for cat_data in categories_data:
+            category = WarehouseCategory(**cat_data)
+            db.session.add(category)
+            db.session.flush()  # Получаем ID
+            category_objects[cat_data['name']] = category
+        
+        # Создаем подкатегории
+        subcategories_data = [
+            {'name': 'Детские костюмы', 'parent_id': category_objects['Костюмы'].id, 'color': '#ff7675'},
+            {'name': 'Взрослые костюмы', 'parent_id': category_objects['Костюмы'].id, 'color': '#fd79a8'},
+            {'name': 'Супергерои', 'parent_id': category_objects['Костюмы'].id, 'color': '#6c5ce7'},
+            {'name': 'Принцессы', 'parent_id': category_objects['Костюмы'].id, 'color': '#fd79a8'},
+            {'name': 'Шары и надувные изделия', 'parent_id': category_objects['Реквизит'].id, 'color': '#00b894'},
+            {'name': 'Аксессуары', 'parent_id': category_objects['Реквизит'].id, 'color': '#00cec9'},
+            {'name': 'Фоны и баннеры', 'parent_id': category_objects['Декорации'].id, 'color': '#0984e3'},
+            {'name': 'Фотозоны', 'parent_id': category_objects['Декорации'].id, 'color': '#74b9ff'},
+        ]
+        
+        for subcat_data in subcategories_data:
+            subcategory = WarehouseCategory(**subcat_data)
+            db.session.add(subcategory)
+            db.session.flush()
+            category_objects[subcat_data['name']] = subcategory
+        
+        # Создаем товары с множественными категориями
+        import time
+        timestamp = int(time.time())
+        
+        items_data = [
+            {
+                'name': 'Костюм Человека-паука (детский, размер M)',
+                'barcode': f'{timestamp}001',
+                'sku': 'COST-SPIDER-M',
+                'description': 'Детский костюм Человека-паука, размер M, возраст 6-8 лет',
+                'categories': ['Детские костюмы', 'Супергерои'],
+                'unit': 'шт',
+                'min_quantity': 2,
+                'max_quantity': 10,
+                'cost_price': 15000,
+                'current_quantity': 5
+            },
+            {
+                'name': 'Костюм принцессы Эльзы (детский, размер S)',
+                'barcode': f'{timestamp}002',
+                'sku': 'COST-ELSA-S',
+                'description': 'Детский костюм принцессы Эльзы из м/ф Холодное сердце',
+                'categories': ['Детские костюмы', 'Принцессы', 'Фоны и баннеры'],
+                'unit': 'шт',
+                'min_quantity': 1,
+                'max_quantity': 8,
+                'cost_price': 18000,
+                'current_quantity': 3
+            },
+            {
+                'name': 'Воздушные шары красные (упаковка 100 шт)',
+                'barcode': f'{timestamp}003',
+                'sku': 'BALL-RED-100',
+                'description': 'Воздушные шары красного цвета, диаметр 30см',
+                'categories': ['Шары и надувные изделия', 'Реквизит'],
+                'unit': 'упак',
+                'min_quantity': 5,
+                'max_quantity': 50,
+                'cost_price': 2000,
+                'current_quantity': 15
+            },
+            {
+                'name': 'Воздушные шары синие (упаковка 100 шт)',
+                'barcode': f'{timestamp}004',
+                'sku': 'BALL-BLUE-100',
+                'description': 'Воздушные шары синего цвета, диаметр 30см',
+                'categories': ['Шары и надувные изделия', 'Реквизит'],
+                'unit': 'упак',
+                'min_quantity': 5,
+                'max_quantity': 50,
+                'cost_price': 2000,
+                'current_quantity': 8
+            },
+            {
+                'name': 'Микрофон беспроводной Shure SM58',
+                'barcode': f'{timestamp}005',
+                'sku': 'MIC-SHURE-SM58',
+                'description': 'Профессиональный беспроводной микрофон Shure SM58',
+                'categories': ['Музыкальное оборудование'],
+                'unit': 'шт',
+                'min_quantity': 1,
+                'max_quantity': 5,
+                'cost_price': 45000,
+                'current_quantity': 2
+            },
+            {
+                'name': 'Колонка портативная JBL',
+                'barcode': f'{timestamp}006',
+                'sku': 'SPEAKER-JBL-001',
+                'description': 'Портативная Bluetooth колонка JBL для мероприятий',
+                'categories': ['Музыкальное оборудование'],
+                'unit': 'шт',
+                'min_quantity': 1,
+                'max_quantity': 3,
+                'cost_price': 25000,
+                'current_quantity': 1
+            },
+            {
+                'name': 'Фотозона "Единороги"',
+                'barcode': f'{timestamp}007',
+                'sku': 'PHOTO-UNICORN-001',
+                'description': 'Фотозона с единорогами для детских праздников',
+                'categories': ['Фотозоны', 'Декорации'],
+                'unit': 'шт',
+                'min_quantity': 1,
+                'max_quantity': 3,
+                'cost_price': 35000,
+                'current_quantity': 2
+            },
+            {
+                'name': 'Набор мыльных пузырей',
+                'barcode': f'{timestamp}008',
+                'sku': 'BUBBLES-SET-001',
+                'description': 'Набор для создания мыльных пузырей с аппаратом',
+                'categories': ['Игрушки', 'Реквизит'],
+                'unit': 'комплект',
+                'min_quantity': 2,
+                'max_quantity': 10,
+                'cost_price': 8000,
+                'current_quantity': 0  # Нет в наличии
+            },
+            {
+                'name': 'Конструктор LEGO Friends',
+                'barcode': f'{timestamp}009',
+                'sku': 'LEGO-FRIENDS-001',
+                'description': 'Большой набор LEGO Friends для детских мероприятий',
+                'categories': ['Игрушки'],
+                'unit': 'шт',
+                'min_quantity': 1,
+                'max_quantity': 5,
+                'cost_price': 12000,
+                'current_quantity': 4
+            },
+            {
+                'name': 'Гелиевые шары фольгированные "С Днем Рождения"',
+                'barcode': f'{timestamp}010',
+                'sku': 'FOIL-BDAY-001',
+                'description': 'Фольгированные шары с надписью "С Днем Рождения"',
+                'categories': ['Шары и надувные изделия', 'Реквизит'],
+                'unit': 'шт',
+                'min_quantity': 10,
+                'max_quantity': 100,
+                'cost_price': 800,
+                'current_quantity': 25
+            },
+            {
+                'name': 'Маска Бэтмена',
+                'barcode': f'{timestamp}011',
+                'sku': 'MASK-BATMAN-001',
+                'description': 'Детская маска Бэтмена из прочного пластика',
+                'categories': ['Супергерои', 'Аксессуары'],
+                'unit': 'шт',
+                'min_quantity': 5,
+                'max_quantity': 20,
+                'cost_price': 3000,
+                'current_quantity': 12
+            },
+            {
+                'name': 'Корона принцессы золотая',
+                'barcode': f'{timestamp}012',
+                'sku': 'CROWN-GOLD-001',
+                'description': 'Золотая корона принцессы с камнями',
+                'categories': ['Принцессы', 'Аксессуары'],
+                'unit': 'шт',
+                'min_quantity': 3,
+                'max_quantity': 15,
+                'cost_price': 5000,
+                'current_quantity': 7
+            }
+        ]
+        
+        for item_data in items_data:
+            # Извлекаем категории из данных
+            category_names = item_data.pop('categories', [])
+            
+            # Создаем товар
+            item = WarehouseItem(**item_data)
+            db.session.add(item)
+            db.session.flush()  # Получаем ID товара
+            
+            # Добавляем связи с категориями
+            category_ids = []
+            for cat_name in category_names:
+                if cat_name in category_objects:
+                    category_ids.append(category_objects[cat_name].id)
+                else:
+                    # Создаем категорию, если не существует
+                    new_category = WarehouseCategory.find_or_create_by_name(cat_name)
+                    category_ids.append(new_category.id)
+            
+            if category_ids:
+                item.set_categories(category_ids)
+        
+        db.session.commit()
+        print(f"✅ Создано {len(categories_data)} основных категорий, {len(subcategories_data)} подкатегорий и {len(items_data)} товаров")
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Ошибка при создании данных склада: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+# Обновленная функция очистки данных
+def clear_warehouse_data():
+    """Очистить все данные склада"""
+    try:
+        # Удаляем в правильном порядке из-за внешних ключей
+        WarehouseOperation.query.delete()
+        WarehouseInventoryRecord.query.delete()
+        WarehouseInventory.query.delete()
+        WarehouseItemCategory.query.delete()  # Новая таблица связи
+        WarehouseItem.query.delete()
+        WarehouseCategory.query.delete()
+        
+        db.session.commit()
+        print("✅ Данные склада очищены")
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Ошибка при очистке данных склада: {e}")
+
+
+# Функция для добавления недостающих категорий к существующим товарам
+def migrate_existing_items_to_multiple_categories():
+    """Миграция существующих товаров для поддержки множественных категорий"""
+    try:
+        print("🔄 Миграция существующих товаров...")
+        
+        # Находим товары без связей с категориями
+        items_without_categories = db.session.query(WarehouseItem).filter(
+            ~WarehouseItem.id.in_(
+                db.session.query(WarehouseItemCategory.item_id)
+            )
+        ).all()
+        
+        if not items_without_categories:
+            print("✅ Все товары уже имеют категории")
+            return
+        
+        # Создаем категорию "Без категории" если не существует
+        default_category = WarehouseCategory.find_or_create_by_name("Без категории")
+        
+        # Добавляем связи для товаров без категорий
+        for item in items_without_categories:
+            item.add_category(default_category.id)
+        
+        db.session.commit()
+        print(f"✅ Обновлено {len(items_without_categories)} товаров")
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Ошибка миграции: {e}")
+
+
+# CLI команда для проверки и исправления данных
+def fix_warehouse_data():
+    """Исправить проблемы с данными склада"""
+    print("🔧 Проверка и исправление данных склада...")
+    
+    # 1. Миграция товаров без категорий
+    migrate_existing_items_to_multiple_categories()
+    
+    # 2. Проверка целостности связей
+    orphaned_relations = db.session.query(WarehouseItemCategory).filter(
+        ~WarehouseItemCategory.item_id.in_(
+            db.session.query(WarehouseItem.id)
+        ) | ~WarehouseItemCategory.category_id.in_(
+            db.session.query(WarehouseCategory.id)
+        )
+    ).all()
+    
+    if orphaned_relations:
+        print(f"🗑️ Удаление {len(orphaned_relations)} неверных связей...")
+        for relation in orphaned_relations:
+            db.session.delete(relation)
+        db.session.commit()
+    
+    # 3. Обновление счетчиков категорий
+    categories = WarehouseCategory.query.all()
+    for category in categories:
+        items_count = category.get_items_count()
+        print(f"📊 Категория '{category.name}': {items_count} товаров")
+    
+    print("✅ Проверка завершена")
+
+
+# Функция для очистки данных склада (для тестирования)
+def clear_warehouse_data():
+    """Очистить все данные склада"""
+    try:
+        # Удаляем в правильном порядке из-за внешних ключей
+        WarehouseOperation.query.delete()
+        WarehouseInventoryRecord.query.delete()
+        WarehouseInventory.query.delete()
+        WarehouseItem.query.delete()
+        WarehouseCategory.query.delete()
+        
+        db.session.commit()
+        print("✅ Данные склада очищены")
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Ошибка при очистке данных склада: {e}")
+
+# Функция для пересоздания данных склада
+def recreate_warehouse_data():
+    """Пересоздать данные склада"""
+    print("🔄 Пересоздание данных склада...")
+    clear_warehouse_data()
+    create_sample_warehouse_data()
+    print("✅ Данные склада пересозданы")
+
+# Константы для операций
+OPERATION_TYPES = {
+    'add': 'Поступление',
+    'remove': 'Списание', 
+    'transfer': 'Перемещение',
+    'adjust': 'Корректировка',
+    'reserve': 'Резервирование',
+    'unreserve': 'Снятие резерва'
+}
+
+REMOVAL_REASONS = [
+    'Брак',
+    'Выдача в производство',
+    'Списание по износу',
+    'Потеря',
+    'Кража',
+    'Передача в другой отдел',
+    'Возврат поставщику',
+    'Прочее'
+]
+
+ADDITION_REASONS = [
+    'Закупка',
+    'Возврат из производства',
+    'Возврат от клиента',
+    'Передача из другого отдела',
+    'Находка',
+    'Корректировка остатков',
+    'Прочее'
+]
+
+
+# В models/__init__.py - обновленная модель WarehouseItem
+
+
+# НОВАЯ таблица связи товаров и категорий (many-to-many)
+class WarehouseItemCategory(db.Model):
+    """Связь товаров и категорий (many-to-many)"""
+    __tablename__ = 'warehouse_item_categories'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(db.Integer, db.ForeignKey('warehouse_items.id'), nullable=False)
+    category_id = db.Column(db.Integer, db.ForeignKey('warehouse_categories.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Уникальное ограничение для предотвращения дублирования
+    __table_args__ = (
+        db.UniqueConstraint('item_id', 'category_id', name='unique_item_category'),
+    )
+    
+    # Связи
+    item = db.relationship('WarehouseItem', backref='item_categories')
+    category = db.relationship('WarehouseCategory', backref='category_items')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'item_id': self.item_id,
+            'category_id': self.category_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+
+# Обновленная модель категорий для поддержки связи с товарами
+class WarehouseCategory(db.Model):
+    """Категории товаров на складе"""
+    __tablename__ = 'warehouse_categories'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    parent_id = db.Column(db.Integer, db.ForeignKey('warehouse_categories.id'), nullable=True)
+    description = db.Column(db.Text)
+    color = db.Column(db.String(7), default='#6366f1')  # Цвет для UI
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Иерархические связи
+    children = db.relationship('WarehouseCategory', 
+                             backref=db.backref('parent', remote_side=[id]),
+                             lazy='dynamic')
+    
+    def to_dict(self, include_children=False):
+        data = {
+            'id': self.id,
+            'name': self.name,
+            'parent_id': self.parent_id,
+            'description': self.description,
+            'color': self.color,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+        
+        if include_children:
+            data['children'] = [child.to_dict() for child in self.children]
+            
+        return data
+    
+    def get_full_path(self):
+        """Получить полный путь категории"""
+        path = [self.name]
+        parent = self.parent
+        while parent:
+            path.insert(0, parent.name)
+            parent = parent.parent
+        return ' > '.join(path)
+    
+    def get_items_count(self, include_subcategories=True):
+        """Получить количество товаров в категории"""
+        if include_subcategories:
+            # Получаем все ID дочерних категорий
+            category_ids = self.get_all_child_ids()
+            category_ids.append(self.id)
+            
+            return db.session.query(WarehouseItem).join(WarehouseItemCategory).filter(
+                WarehouseItemCategory.category_id.in_(category_ids),
+                WarehouseItem.status == 'active'
+            ).distinct().count()
+        else:
+            return db.session.query(WarehouseItem).join(WarehouseItemCategory).filter(
+                WarehouseItemCategory.category_id == self.id,
+                WarehouseItem.status == 'active'
+            ).count()
+    
+    def get_all_child_ids(self):
+        """Получить все ID дочерних категорий рекурсивно"""
+        child_ids = []
+        for child in self.children:
+            child_ids.append(child.id)
+            child_ids.extend(child.get_all_child_ids())
+        return child_ids
+
+    @classmethod
+    def find_or_create_by_name(cls, name, parent_id=None):
+        """Найти категорию по имени или создать новую"""
+        category = cls.query.filter(
+            cls.name == name,
+            cls.parent_id == parent_id
+        ).first()
+        
+        if not category:
+            category = cls(
+                name=name,
+                parent_id=parent_id,
+                color='#6366f1'  # Цвет по умолчанию
+            )
+            db.session.add(category)
+            db.session.flush()  # Получаем ID
+        
+        return category
+
+
+# Обновленные функции для статистики
+def get_warehouse_stats():
+    """Получить общую статистику склада"""
+    total_items = WarehouseItem.query.filter(WarehouseItem.status == 'active').count()
+    total_categories = WarehouseCategory.query.count()
+    low_stock_items = len(WarehouseItem.get_low_stock_items())
+    out_of_stock_items = WarehouseItem.query.filter(
+        WarehouseItem.current_quantity == 0,
+        WarehouseItem.status == 'active'
+    ).count()
+    
+    # Общая стоимость склада
+    total_value = db.session.query(
+        func.sum(WarehouseItem.current_quantity * WarehouseItem.cost_price)
+    ).filter(WarehouseItem.status == 'active').scalar() or 0
+    
+    # Операции за последние 30 дней
+    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    recent_operations = WarehouseOperation.query.filter(
+        WarehouseOperation.created_at >= thirty_days_ago
+    ).count()
+    
+    return {
+        'total_items': total_items,
+        'total_categories': total_categories,
+        'low_stock_items': low_stock_items,
+        'out_of_stock_items': out_of_stock_items,
+        'total_value': float(total_value),
+        'recent_operations': recent_operations
+    }

@@ -36,9 +36,12 @@ def create_app():
     from routes.analytics import analytics_bp
     from routes.blog import blog_bp  # Убедитесь что импорт есть
     from routes.company_data import company_data_bp  # Импорт для company_data
+    from routes.warehouse import warehouse_bp
     # from routes.bot_messages import telegram_bp
     # from routes.telegram_users import telegram_users_bp
     
+
+    app.register_blueprint(warehouse_bp, url_prefix='/api/warehouse')
     app.register_blueprint(settings_bp, url_prefix='/api/settings')
     app.register_blueprint(blog_bp, url_prefix='/api/blog')
     app.register_blueprint(services_bp, url_prefix='/api/services')
@@ -373,12 +376,22 @@ def blog_stats():
     except Exception as e:
         print(f"❌ Ошибка при получении статистики: {e}")
 
+# Добавить CLI команду для инициализации склада
+@app.cli.command()
+def init_warehouse():
+    """Инициализация склада с примерами данных"""
+    print("🏭 Инициализация склада...")
+    from models import create_sample_warehouse_data
+    create_sample_warehouse_data()
+
+
 if __name__ == '__main__':    
     with app.app_context():
         db.create_all()
-        seed_admins()  # Создание тестовых админов
+        seed_admins()
         seed_blog_posts()
         Settings.init_default_settings()
-        # Раскомментируйте следующую строку если хотите создать примеры статей при запуске
-        # seed_blog_posts()  # Создание примеров статей блога
+        # Добавляем инициализацию склада
+        from models import create_sample_warehouse_data
+        create_sample_warehouse_data()
     app.run(debug=True)
