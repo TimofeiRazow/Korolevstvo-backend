@@ -12,3 +12,4 @@ requests
 aiohttp
 # Telegram Bot API
 python-telegram-bot==20.7
+bs4

@@ -3,6 +3,7 @@ from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy import desc, func, or_, and_
 from models import db, WarehouseItem, WarehouseCategory, WarehouseOperation, Admin, WarehouseItemCategory
+from utils.barcode import get_product_from_service_online
 from datetime import datetime, timedelta
 import csv
 import io
@@ -1173,26 +1174,29 @@ def get_barcode_info():
         
         if existing_item:
             return jsonify({
+                'success' : True,
                 'found_in_database': True,
                 'item': existing_item.to_dict(),
                 'message': 'Товар найден в базе данных'
             })
         
-        # ЗАГЛУШКА: имитация запроса к внешнему сервису
-        mock_product_data = {
-            'name': f'Товар по штрих-коду {barcode}',
-            'description': 'Автоматически определенное описание товара',
-            'categories': ['Электроника', 'Бытовая техника'],
-            'unit': 'шт',
-            'estimated_price': 10000
-        }
+        # Получаем данные из внешнего сервиса
+        product_data = get_product_from_service_online(barcode)
+        if not product_data:
+            return jsonify({
+                'success' : False,
+                'found_in_database': False,
+                'barcode': barcode,
+                'message': 'Информация не найдена во внешнем источнике'
+            }), 404
         
         import time
         time.sleep(0.5)
         
         return jsonify({
+            'success' : True,
             'found_in_database': False,
-            'external_data': mock_product_data,
+            'external_data': product_data,
             'barcode': barcode,
             'message': 'Информация получена из внешнего источника'
         })
