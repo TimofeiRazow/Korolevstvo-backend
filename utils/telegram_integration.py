@@ -1,10 +1,7 @@
 # utils/telegram_integration.py - Обновленная версия
 
 import requests
-import json
 import logging
-from datetime import datetime
-from services.telegram.telegram_service import TelegramNotificationService
 
 
 logger = logging.getLogger(__name__)
