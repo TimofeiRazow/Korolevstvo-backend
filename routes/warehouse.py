@@ -162,8 +162,10 @@ def search_categories():
             return jsonify({'categories': []})
         
         search_filter = f"%{query}%"
+        from sqlalchemy import func
+
         categories = WarehouseCategory.query.filter(
-            WarehouseCategory.name.ilike(search_filter)
+            func.lower(WarehouseCategory.name).like(func.lower(search_filter))
         ).limit(limit).all()
         
         return jsonify({
@@ -642,33 +644,28 @@ def search_items():
         except (ValueError, TypeError):
             category_ids = []
         
-        # Базовый поиск
+        from sqlalchemy import func
+
         search_filter = f"%{query}%"
         search_query = WarehouseItem.query.filter(
             WarehouseItem.status == 'active'
         ).filter(
             or_(
-                WarehouseItem.name.ilike(search_filter),
-                WarehouseItem.barcode.ilike(search_filter),
-                WarehouseItem.sku.ilike(search_filter),
-                WarehouseItem.description.ilike(search_filter)
+                func.lower(WarehouseItem.name).like(func.lower(search_filter)),
+                func.lower(WarehouseItem.barcode).like(func.lower(search_filter)),
+                func.lower(WarehouseItem.sku).like(func.lower(search_filter)),
+                func.lower(WarehouseItem.description).like(func.lower(search_filter))
             )
         )
         
         # Фильтр по категориям
         if category_ids:
-            # Получаем все дочерние категории
-            all_category_ids = []
-            for cat_id in category_ids:
-                all_category_ids.append(cat_id)
-                category = WarehouseCategory.query.get(cat_id)
-                if category:
-                    all_category_ids.extend(category.get_all_child_ids())
-            
-            all_category_ids = list(set(all_category_ids))
-            search_query = search_query.join(WarehouseItemCategory).filter(
-                WarehouseItemCategory.category_id.in_(all_category_ids)
-            ).distinct()
+            categories = WarehouseCategory.query.filter(WarehouseCategory.id.in_(category_ids)).all()
+            all_category_ids = set()
+            for category in categories:
+                all_category_ids.add(category.id)
+                all_category_ids.update(category.get_all_child_ids())
+
         
         items = search_query.limit(limit).all()
         
