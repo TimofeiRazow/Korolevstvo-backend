@@ -10,4 +10,4 @@ instance/korolevstvo_chudes.db
 /services/telegram/.env
 /services/telegram/venv
 /services/telegram/__pycache__
-
+.env
