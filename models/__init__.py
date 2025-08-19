@@ -155,10 +155,13 @@ class Booking(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     service = db.relationship('Service', backref='bookings')
+    # В класс Booking добавьте:
+    lead_id = db.Column(db.Integer, db.ForeignKey('leads.id'), nullable=True)
+# Отношение source_lead уже создается через backref в модели Lead
     
     def to_dict(self):
         try:
-            return {
+            data = {
                 'id': self.id,
                 'name': self.name,
                 'phone': self.phone,
@@ -172,8 +175,21 @@ class Booking(db.Model):
                 'location': self.location,
                 'message': self.message,
                 'status': self.status,
-                'created_at': self.created_at.isoformat()
+                'created_at': self.created_at.isoformat(),
+                # 🆕 НОВОЕ: Информация о связанном лиде
+                'lead_id': self.lead_id
             }
+            
+            # Добавляем краткую информацию о лиде, если он есть
+            if self.source_lead:
+                data['lead_info'] = {
+                    'id': self.source_lead.id,
+                    'status': self.source_lead.status,
+                    'quality_score': self.source_lead.quality_score,
+                    'temperature': self.source_lead.temperature
+                }
+            
+            return data
         except Exception as e:
             print("Ошибка в to_dict:", e)
             return {'error': str(e)}
@@ -2305,8 +2321,413 @@ class WarehouseCategory(db.Model):
         return category
 
 
+# models/lead.py
+class Lead(db.Model):
+    __tablename__ = 'leads'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    
+    # Основная информация
+    name = db.Column(db.String(100), nullable=False)
+    phone = db.Column(db.String(20), nullable=False, index=True)
+    email = db.Column(db.String(120), index=True)
+    
+    # Персональная информация
+    birthday = db.Column(db.Date)  # День рождения лида
+    age = db.Column(db.Integer)  # Возраст (для детей особенно важно)
+    gender = db.Column(db.String(10))  # male, female, other
+    
+    # Источники привлечения
+    source = db.Column(db.String(50), default='website')  # website, instagram, whatsapp, referral, google, yandex
+    utm_source = db.Column(db.String(100))
+    utm_medium = db.Column(db.String(100))
+    utm_campaign = db.Column(db.String(100))
+    referrer = db.Column(db.String(200))  # Кто рекомендовал
+    
+    # Интересы и предпочтения
+    interested_services = db.Column(db.JSON)  # Список интересующих услуг
+    preferred_budget = db.Column(db.String(50))  # Предпочитаемый бюджет
+    event_type = db.Column(db.String(50))  # birthday, wedding, corporate, anniversary
+    preferred_date = db.Column(db.Date)  # Предпочитаемая дата мероприятия
+    guests_count = db.Column(db.Integer)  # Ожидаемое количество гостей
+    location_preference = db.Column(db.String(200))  # Предпочитаемое место
+    
+    # Статус и этапы воронки
+    status = db.Column(db.String(20), default='new')  # new, contacted, interested, qualified, converted, lost
+    stage = db.Column(db.String(20), default='awareness')  # awareness, interest, consideration, intent, evaluation, purchase
+    quality_score = db.Column(db.Integer, default=0)  # Оценка качества лида (0-100)
+    temperature = db.Column(db.String(10), default='cold')  # cold, warm, hot
+    
+    # Коммуникация
+    last_contact_date = db.Column(db.DateTime)
+    next_follow_up = db.Column(db.DateTime)
+    contact_attempts = db.Column(db.Integer, default=0)
+    preferred_contact_method = db.Column(db.String(20), default='phone')  # phone, email, whatsapp, telegram
+    
+    # Заметки и теги
+    notes = db.Column(db.Text)
+    tags = db.Column(db.JSON)  # Теги для сегментации
+    
+    # Назначенный менеджер
+    assigned_to = db.Column(db.Integer, db.ForeignKey('admins.id'))
+    assigned_manager = db.relationship('Admin', backref='assigned_leads')
+    
+    # Временные метки
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    converted_at = db.Column(db.DateTime)  # Дата конверсии в заявку
+    
+    # Связи
+    bookings = db.relationship('Booking', backref='source_lead', lazy='dynamic')
+    
+    def __init__(self, **kwargs):
+        super(Lead, self).__init__(**kwargs)
+        if self.created_at is None:
+            self.created_at = datetime.utcnow()
+        if self.updated_at is None:
+            self.updated_at = datetime.utcnow()
+    
+    def to_dict(self, include_personal=False):
+        """Преобразование в словарь с возможностью скрытия персональных данных"""
+        data = {
+            'id': self.id,
+            'name': self.name,
+            'phone': self.phone if include_personal else self.phone[:3] + '***' + self.phone[-4:] if self.phone else None,
+            'source': self.source,
+            'interested_services': self.interested_services or [],
+            'preferred_budget': self.preferred_budget,
+            'event_type': self.event_type,
+            'preferred_date': self.preferred_date.isoformat() if self.preferred_date else None,
+            'guests_count': self.guests_count,
+            'location_preference': self.location_preference,
+            'status': self.status,
+            'stage': self.stage,
+            'quality_score': self.quality_score,
+            'temperature': self.temperature,
+            'last_contact_date': self.last_contact_date.isoformat() if self.last_contact_date else None,
+            'next_follow_up': self.next_follow_up.isoformat() if self.next_follow_up else None,
+            'contact_attempts': self.contact_attempts,
+            'preferred_contact_method': self.preferred_contact_method,
+            'tags': self.tags or [],
+            'assigned_to': self.assigned_to,
+            'assigned_manager_name': self.assigned_manager.name if self.assigned_manager else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'converted_at': self.converted_at.isoformat() if self.converted_at else None,
+            'bookings_count': self.bookings.count(),
+            'days_since_created': (datetime.utcnow() - self.created_at).days if self.created_at else 0
+        }
+        
+        # Персональная информация только для менеджеров
+        if include_personal:
+            data.update({
+                'email': self.email,
+                'birthday': self.birthday.isoformat() if self.birthday else None,
+                'age': self.age,
+                'gender': self.gender,
+                'utm_source': self.utm_source,
+                'utm_medium': self.utm_medium,
+                'utm_campaign': self.utm_campaign,
+                'referrer': self.referrer,
+                'notes': self.notes
+            })
+            
+            # Добавляем информацию о дне рождения
+            if self.birthday:
+                today = datetime.utcnow().date()
+                this_year_birthday = self.birthday.replace(year=today.year)
+                if this_year_birthday < today:
+                    next_birthday = self.birthday.replace(year=today.year + 1)
+                else:
+                    next_birthday = this_year_birthday
+                
+                data.update({
+                    'days_until_birthday': (next_birthday - today).days,
+                    'birthday_this_year': this_year_birthday.isoformat(),
+                    'is_birthday_soon': (next_birthday - today).days <= 30
+                })
+        
+        return data
+    
+    def update_from_dict(self, data):
+        """Обновление модели из словаря данных"""
+        # Основная информация
+        self.name = data.get('name', self.name)
+        self.phone = data.get('phone', self.phone)
+        self.email = data.get('email', self.email)
+        
+        # Персональная информация
+        if 'birthday' in data and data['birthday']:
+            try:
+                if isinstance(data['birthday'], str):
+                    self.birthday = datetime.fromisoformat(data['birthday'].replace('Z', '')).date()
+                else:
+                    self.birthday = data['birthday']
+            except:
+                pass
+        
+        self.age = data.get('age', self.age)
+        self.gender = data.get('gender', self.gender)
+        
+        # Маркетинг
+        self.source = data.get('source', self.source)
+        self.utm_source = data.get('utm_source', self.utm_source)
+        self.utm_medium = data.get('utm_medium', self.utm_medium)
+        self.utm_campaign = data.get('utm_campaign', self.utm_campaign)
+        self.referrer = data.get('referrer', self.referrer)
+        
+        # Предпочтения
+        self.preferred_budget = data.get('preferred_budget', self.preferred_budget)
+        self.event_type = data.get('event_type', self.event_type)
+        self.guests_count = data.get('guests_count', self.guests_count)
+        self.location_preference = data.get('location_preference', self.location_preference)
+        
+        if 'preferred_date' in data and data['preferred_date']:
+            try:
+                if isinstance(data['preferred_date'], str):
+                    self.preferred_date = datetime.fromisoformat(data['preferred_date'].replace('Z', '')).date()
+                else:
+                    self.preferred_date = data['preferred_date']
+            except:
+                pass
+        
+        # Статус
+        self.status = data.get('status', self.status)
+        self.stage = data.get('stage', self.stage)
+        self.quality_score = data.get('quality_score', self.quality_score)
+        self.temperature = data.get('temperature', self.temperature)
+        
+        # Коммуникация
+        self.preferred_contact_method = data.get('preferred_contact_method', self.preferred_contact_method)
+        self.notes = data.get('notes', self.notes)
+        self.assigned_to = data.get('assigned_to', self.assigned_to)
+        
+        if 'next_follow_up' in data and data['next_follow_up']:
+            try:
+                self.next_follow_up = datetime.fromisoformat(data['next_follow_up'].replace('Z', ''))
+            except:
+                pass
+        
+        # Обработка списковых полей
+        if 'interested_services' in data:
+            if isinstance(data['interested_services'], str):
+                self.interested_services = [s.strip() for s in data['interested_services'].split(',') if s.strip()]
+            else:
+                self.interested_services = data['interested_services']
+        
+        if 'tags' in data:
+            if isinstance(data['tags'], str):
+                self.tags = [t.strip() for t in data['tags'].split(',') if t.strip()]
+            else:
+                self.tags = data['tags']
+        
+        self.updated_at = datetime.utcnow()
+    
+    def convert_to_booking(self, booking_data=None):
+        """Конвертировать лид в заявку"""
+        if self.status == 'converted':
+            return None  # Уже конвертирован
+        
+        # Создаем заявку на основе данных лида
+        booking_data = booking_data or {}
+        booking = Booking(
+            name=self.name,
+            phone=self.phone,
+            email=self.email,
+            event_date=self.preferred_date,
+            guests_count=self.guests_count,
+            location=self.location_preference,
+            budget=self.preferred_budget,
+            message=booking_data.get('message', f'Конвертирован из лида #{self.id}'),
+            status='new'
+        )
+        
+        # Устанавливаем связь
+        booking.source_lead = self
+        
+        # Обновляем статус лида
+        self.status = 'converted'
+        self.converted_at = datetime.utcnow()
+        self.updated_at = datetime.utcnow()
+        
+        db.session.add(booking)
+        return booking
+    
+    def update_contact_info(self, contact_date=None, result=None):
+        """Обновить информацию о контакте"""
+        self.last_contact_date = contact_date or datetime.utcnow()
+        self.contact_attempts = (self.contact_attempts or 0) + 1
+        
+        # Автоматически планируем следующий контакт в зависимости от результата
+        if result == 'answered':
+            self.next_follow_up = datetime.utcnow() + timedelta(days=3)
+            self.temperature = 'warm'
+        elif result == 'no_answer':
+            self.next_follow_up = datetime.utcnow() + timedelta(days=1)
+        elif result == 'not_interested':
+            self.status = 'lost'
+            self.next_follow_up = None
+        elif result == 'interested':
+            self.next_follow_up = datetime.utcnow() + timedelta(days=1)
+            self.temperature = 'hot'
+            self.status = 'qualified'
+        
+        self.updated_at = datetime.utcnow()
+    
+    def calculate_quality_score(self):
+        """Автоматический расчет качества лида"""
+        score = 0
+        
+        # Источник (20 баллов максимум)
+        source_scores = {
+            'referral': 20,
+            'google': 15,
+            'instagram': 12,
+            'website': 10,
+            'yandex': 10,
+            'whatsapp': 8,
+            'other': 5
+        }
+        score += source_scores.get(self.source, 5)
+        
+        # Бюджет (25 баллов максимум)
+        if self.preferred_budget:
+            if '200000' in self.preferred_budget or '300000' in self.preferred_budget:
+                score += 25
+            elif '100000' in self.preferred_budget or '150000' in self.preferred_budget:
+                score += 20
+            elif '50000' in self.preferred_budget:
+                score += 15
+            else:
+                score += 10
+        
+        # Полнота информации (20 баллов максимум)
+        fields_filled = sum([
+            bool(self.email),
+            bool(self.preferred_date),
+            bool(self.guests_count),
+            bool(self.location_preference),
+            bool(self.event_type)
+        ])
+        score += fields_filled * 4
+        
+        # Скорость ответа (15 баллов максимум)
+        if self.last_contact_date and self.created_at:
+            response_hours = (self.last_contact_date - self.created_at).total_seconds() / 3600
+            if response_hours <= 1:
+                score += 15
+            elif response_hours <= 24:
+                score += 10
+            elif response_hours <= 72:
+                score += 5
+        
+        # Активность (20 баллов максимум)
+        if self.contact_attempts:
+            if self.contact_attempts >= 3:
+                score += 20
+            else:
+                score += self.contact_attempts * 7
+        
+        self.quality_score = min(score, 100)
+        return self.quality_score
+    
+    @classmethod
+    def get_stats(cls, period_days=30):
+        """Получить статистику лидов"""
+        date_from = datetime.utcnow() - timedelta(days=period_days)
+        
+        # Общая статистика
+        total = cls.query.filter(cls.created_at >= date_from).count()
+        converted = cls.query.filter(
+            cls.created_at >= date_from,
+            cls.status == 'converted'
+        ).count()
+        
+        # По статусам
+        status_stats = db.session.query(
+            cls.status,
+            func.count(cls.id).label('count')
+        ).filter(cls.created_at >= date_from).group_by(cls.status).all()
+        
+        # По источникам
+        source_stats = db.session.query(
+            cls.source,
+            func.count(cls.id).label('count')
+        ).filter(cls.created_at >= date_from).group_by(cls.source).all()
+        
+        # По температуре
+        temperature_stats = db.session.query(
+            cls.temperature,
+            func.count(cls.id).label('count')
+        ).filter(cls.created_at >= date_from).group_by(cls.temperature).all()
+        
+        return {
+            'total': total,
+            'converted': converted,
+            'conversion_rate': round((converted / total * 100), 1) if total > 0 else 0,
+            'statuses': [{'status': s, 'count': c} for s, c in status_stats],
+            'sources': [{'source': s, 'count': c} for s, c in source_stats],
+            'temperatures': [{'temperature': t, 'count': c} for t, c in temperature_stats]
+        }
+    
+    @classmethod
+    def get_birthday_leads(cls, days_ahead=30):
+        """Получить лидов с днями рождения в ближайшие дни"""
+        today = datetime.utcnow().date()
+        target_date = today + timedelta(days=days_ahead)
+        
+        # Сложный запрос для поиска дней рождения с учетом года
+        leads = cls.query.filter(
+            cls.birthday.isnot(None),
+            cls.status.in_(['new', 'contacted', 'interested', 'qualified'])
+        ).all()
+        
+        birthday_leads = []
+        for lead in leads:
+            if lead.birthday:
+                # Проверяем день рождения в этом и следующем году
+                this_year = lead.birthday.replace(year=today.year)
+                next_year = lead.birthday.replace(year=today.year + 1)
+                
+                if today <= this_year <= target_date or today <= next_year <= target_date:
+                    birthday_leads.append(lead)
+        
+        return birthday_leads
+    
+    @classmethod
+    def find_by_phone(cls, phone):
+        """Найти лид по номеру телефона"""
+        return cls.query.filter(cls.phone == phone).first()
+    
+    @classmethod
+    def create_from_booking(cls, booking):
+        """Создать лид из заявки (если лид еще не существует)"""
+        existing_lead = cls.find_by_phone(booking.phone)
+        if existing_lead:
+            return existing_lead
+        
+        lead = cls(
+            name=booking.name,
+            phone=booking.phone,
+            email=booking.email,
+            preferred_date=booking.event_date,
+            guests_count=booking.guests_count,
+            location_preference=booking.location,
+            preferred_budget=booking.budget,
+            event_type='birthday',  # По умолчанию для детских праздников
+            source='website',
+            status='converted',  # Сразу конвертирован
+            converted_at=booking.created_at
+        )
+        
+        # Связываем заявку с лидом
+        booking.source_lead = lead
+        
+        return lead
+
 # Обновленные функции для статистики
 def get_warehouse_stats():
+
     """Получить общую статистику склада"""
     total_items = WarehouseItem.query.filter(WarehouseItem.status == 'active').count()
     total_categories = WarehouseCategory.query.count()
@@ -2335,3 +2756,144 @@ def get_warehouse_stats():
         'total_value': float(total_value),
         'recent_operations': recent_operations
     }
+# Добавьте эти функции в конец models/__init__.py
+
+def create_sample_leads_data():
+    """Создать примеры данных лидов для тестирования"""
+    try:
+        existing_leads = Lead.query.count()
+        if existing_leads > 0:
+            print("✅ Данные лидов уже существуют")
+            return
+        
+        print("🏗️ Создание примеров данных лидов...")
+        
+        # Получаем администраторов для назначения
+        admins = Admin.query.all()
+        if not admins:
+            print("❌ Нет администраторов для назначения лидов")
+            return
+        
+        # Примеры лидов
+        sample_leads = [
+            {
+                'name': 'Анна Петрова',
+                'phone': '+77771234567',
+                'email': 'anna.petrova@example.com',
+                'birthday': datetime(1985, 3, 15).date(),
+                'age': 38,
+                'source': 'instagram',
+                'event_type': 'birthday',
+                'preferred_budget': '150,000 ₸',
+                'guests_count': 15,
+                'location_preference': 'дома',
+                'status': 'interested',
+                'temperature': 'warm',
+                'quality_score': 75,
+                'interested_services': ['детский праздник', 'аниматоры'],
+                'tags': ['vip', 'повторный_клиент'],
+                'notes': 'Организуем день рождения дочери 8 лет'
+            },
+            {
+                'name': 'Дмитрий Сидоров',
+                'phone': '+77772345678',
+                'email': 'dmitry.sidorov@example.com',
+                'birthday': datetime(1992, 7, 22).date(),
+                'source': 'google',
+                'event_type': 'wedding',
+                'preferred_budget': '500,000 ₸',
+                'guests_count': 50,
+                'location_preference': 'банкетный зал',
+                'status': 'qualified',
+                'temperature': 'hot',
+                'quality_score': 90,
+                'interested_services': ['свадьба', 'фотограф'],
+                'preferred_date': datetime(2024, 9, 15).date()
+            },
+            {
+                'name': 'Елена Иванова',
+                'phone': '+77773456789',
+                'source': 'referral',
+                'referrer': 'Анна Петрова',
+                'event_type': 'birthday',
+                'preferred_budget': '80,000 ₸',
+                'guests_count': 10,
+                'status': 'new',
+                'temperature': 'cold',
+                'quality_score': 45,
+                'interested_services': ['детский праздник'],
+                'birthday': datetime(1990, 11, 8).date(),
+                'notes': 'Интересуется организацией дня рождения сына 5 лет'
+            },
+            {
+                'name': 'Максим Козлов',
+                'phone': '+77774567890',
+                'email': 'maxim.kozlov@company.com',
+                'source': 'website',
+                'event_type': 'corporate',
+                'preferred_budget': '300,000 ₸',
+                'guests_count': 30,
+                'location_preference': 'офис компании',
+                'status': 'contacted',
+                'temperature': 'warm',
+                'quality_score': 65,
+                'interested_services': ['корпоратив', 'ведущий'],
+                'birthday': datetime(1988, 4, 12).date()
+            }
+        ]
+        
+        for lead_data in sample_leads:
+            lead = Lead()
+            
+            # Назначаем случайного администратора
+            import random
+            lead.assigned_to = random.choice(admins).id
+            
+            # Устанавливаем даты
+            lead.created_at = datetime.utcnow() - timedelta(days=random.randint(1, 30))
+            lead.updated_at = lead.created_at + timedelta(days=random.randint(0, 5))
+            
+            # Обновляем данные
+            lead.update_from_dict(lead_data)
+            
+            db.session.add(lead)
+        
+        db.session.commit()
+        print(f"✅ Создано {len(sample_leads)} примеров лидов")
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Ошибка при создании данных лидов: {e}")
+
+def migrate_bookings_to_leads():
+    """Создать лидов из существующих заявок"""
+    try:
+        print("🔄 Миграция заявок в лиды...")
+        
+        # Находим заявки без связанных лидов
+        bookings_without_leads = Booking.query.filter(
+            ~Booking.id.in_(
+                db.session.query(Lead.bookings.property.mapper.class_.id)
+                .filter(Lead.bookings.property.mapper.class_.lead_id.isnot(None))
+            )
+        ).all()
+        
+        created_leads = 0
+        for booking in bookings_without_leads:
+            existing_lead = Lead.find_by_phone(booking.phone)
+            
+            if not existing_lead:
+                # Создаем нового лида
+                lead = Lead.create_from_booking(booking)
+                db.session.add(lead)
+                created_leads += 1
+            else:
+                # Связываем с существующим лидом
+                booking.lead_id = existing_lead.id
+        
+        db.session.commit()
+        print(f"✅ Создано {created_leads} лидов из заявок")
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Ошибка миграции заявок в лиды: {e}")

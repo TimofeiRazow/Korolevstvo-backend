@@ -37,10 +37,11 @@ def create_app():
     from routes.blog import blog_bp  # Убедитесь что импорт есть
     from routes.company_data import company_data_bp  # Импорт для company_data
     from routes.warehouse import warehouse_bp
+    from routes.leads import leads_bp
     # from routes.bot_messages import telegram_bp
     # from routes.telegram_users import telegram_users_bp
     
-
+    app.register_blueprint(leads_bp, url_prefix='/api/leads')
     app.register_blueprint(warehouse_bp, url_prefix='/api/warehouse')
     app.register_blueprint(settings_bp, url_prefix='/api/settings')
     app.register_blueprint(blog_bp, url_prefix='/api/blog')
@@ -392,6 +393,7 @@ if __name__ == '__main__':
         seed_blog_posts()
         Settings.init_default_settings()
         # Добавляем инициализацию склада
-        from models import create_sample_warehouse_data
+        from models import create_sample_warehouse_data, create_sample_leads_data
         create_sample_warehouse_data()
-    app.run(debug=True)
+        create_sample_leads_data()
+    app.run(debug=True, host="0.0.0.0", port=5000)
