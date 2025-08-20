@@ -171,7 +171,8 @@ def create_lead():
         
         # Автоматически назначаем текущему пользователю, если не указано
         if not lead.assigned_to:
-            lead.assigned_to = g.current_user.id
+            
+            lead.assigned_to = int(get_jwt_identity())
         
         # Рассчитываем качество лида
         lead.calculate_quality_score()
@@ -179,7 +180,7 @@ def create_lead():
         db.session.add(lead)
         db.session.commit()
         
-        logger.info(f"Created new lead {lead.id} by user {g.current_user.id}")
+        logger.info(f"Created new lead {lead.id} by user {int(get_jwt_identity())}")
         
         return jsonify({
             'success': True,
@@ -209,7 +210,7 @@ def update_lead(lead_id):
         
         db.session.commit()
         
-        logger.info(f"Updated lead {lead_id} by user {g.current_user.id}")
+        logger.info(f"Updated lead {lead_id} by user {int(get_jwt_identity())}")
         
         return jsonify({
             'success': True,
@@ -239,7 +240,7 @@ def delete_lead(lead_id):
         db.session.delete(lead)
         db.session.commit()
         
-        logger.info(f"Deleted lead {lead_id} by user {g.current_user.id}")
+        logger.info(f"Deleted lead {lead_id} by user {int(get_jwt_identity())}")
         
         return jsonify({
             'success': True,
@@ -284,7 +285,7 @@ def add_contact_record(lead_id):
         
         db.session.commit()
         
-        logger.info(f"Added contact record for lead {lead_id} by user {g.current_user.id}")
+        logger.info(f"Added contact record for lead {lead_id} by user {int(get_jwt_identity())}")
         
         return jsonify({
             'success': True,
@@ -320,7 +321,7 @@ def convert_lead_to_booking(lead_id):
         
         db.session.commit()
         
-        logger.info(f"Converted lead {lead_id} to booking {booking.id} by user {g.current_user.id}")
+        logger.info(f"Converted lead {lead_id} to booking {booking.id} by user {int(get_jwt_identity())}")
         
         return jsonify({
             'success': True,
@@ -475,7 +476,7 @@ def import_leads():
             
             db.session.commit()
             
-            logger.info(f"Imported {len(created_leads)} leads from bookings by user {g.current_user.id}")
+            logger.info(f"Imported {len(created_leads)} leads from bookings by user {int(get_jwt_identity())}")
             
             return jsonify({
                 'success': True,
@@ -596,7 +597,7 @@ def bulk_update_leads():
         
         db.session.commit()
         
-        logger.info(f"Bulk updated {updated_count} leads by user {g.current_user.id}")
+        logger.info(f"Bulk updated {updated_count} leads by user {int(get_jwt_identity())}")
         
         return jsonify({
             'success': True,
