@@ -171,8 +171,9 @@ def validate_review_data(data):
         errors.append('Тип услуги не должен превышать 100 символов')
     
     # Проверка на недопустимые символы в имени
-    if data.get('name') and not re.match(r'^[а-яА-Яa-zA-Z0-9\s\-_.]+$', data['name']):
+    if data.get('name') and not re.match(r'^[а-яА-ЯёЁa-zA-Z0-9\s\-_.]+$', data['name']):
         errors.append('Имя содержит недопустимые символы')
+
     
     return errors
 
@@ -300,7 +301,7 @@ def validate_review_data(data: dict) -> List[str]:
             errors.append('Имя должно содержать минимум 2 символа')
         if len(name) > 100:
             errors.append('Имя не должно превышать 100 символов')
-        if not re.match(r'^[а-яА-Я\s\-\.a-zA-Z]+$', name):
+        if not re.match(r'^[а-яёЁА-Я\s\-\.a-zA-Z]+$', name):
             errors.append('Имя может содержать только буквы, пробелы, тире и точки')
     
     # Валидация рейтинга
