@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # routes/leads.py
 from flask import Blueprint, request, jsonify, g
 from sqlalchemy import func, or_, and_, desc
@@ -695,7 +694,7 @@ def get_leads_funnel():
         
     except Exception as e:
         logger.error(f"Error getting leads funnel: {e}")
-=======
+
 # routes/leads.py
 from flask import Blueprint, request, jsonify, g
 from sqlalchemy import func, or_, and_, desc
@@ -1393,5 +1392,4 @@ def get_leads_funnel():
         
     except Exception as e:
         logger.error(f"Error getting leads funnel: {e}")
->>>>>>> 3f30d7d36d123e7da8c211f2a8b5f2aecd357aef
         return jsonify({'error': 'Ошибка при получении воронки лидов'}), 500
