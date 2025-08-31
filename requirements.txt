@@ -13,3 +13,4 @@ aiohttp
 # Telegram Bot API
 python-telegram-bot==20.7
 bs4
+Pillow==10.0.0  # для обработки изображений

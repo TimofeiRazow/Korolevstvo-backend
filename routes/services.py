@@ -6,6 +6,10 @@ from models import db, Service, Admin
 from utils.validators import validate_service_request
 from utils.helpers import paginate_query
 
+import os
+from venv import logger
+from datetime import datetime
+
 services_bp = Blueprint('services', __name__)
 
 @services_bp.route('/', methods=['GET', 'OPTIONS'])
@@ -157,27 +161,74 @@ def get_admin_services():
     })
 
 @services_bp.route('/admin', methods=['POST'])
-@jwt_required()
 def create_service():
     """Создать новую услугу"""
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({'error': 'Нет данных'}), 400
-    
-    # Валидация обязательных полей
-    required_fields = ['title', 'category', 'description']
-    for field in required_fields:
-        if not data.get(field):
-            return jsonify({'error': f'Поле {field} обязательно'}), 400
-    
     try:
-        service = Service()
-        service.update_from_dict(data)
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'Нет данных'}), 400
+        
+        # Валидация обязательных полей
+        required_fields = ['title', 'category', 'description', 'duration', 'minGuests', 'price']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({'error': f'Поле {field} обязательно'}), 400
+        
+        # Обрабатываем изображения
+        images = []
+        if data.get('images'):
+            if isinstance(data['images'], str):
+                # Разбиваем строку по запятым
+                images = [img.strip() for img in data['images'].split(',') if img.strip()]
+            elif isinstance(data['images'], list):
+                images = data['images']
+        
+        # Обрабатываем другие массивы
+        features = []
+        if data.get('features'):
+            if isinstance(data['features'], str):
+                features = [f.strip() for f in data['features'].split(',') if f.strip()]
+            elif isinstance(data['features'], list):
+                features = data['features']
+        
+        subcategories = []
+        if data.get('subcategories'):
+            if isinstance(data['subcategories'], str):
+                subcategories = [s.strip() for s in data['subcategories'].split(',') if s.strip()]
+            elif isinstance(data['subcategories'], list):
+                subcategories = data['subcategories']
+        
+        tags = []
+        if data.get('tags'):
+            if isinstance(data['tags'], str):
+                tags = [t.strip() for t in data['tags'].split(',') if t.strip()]
+            elif isinstance(data['tags'], list):
+                tags = data['tags']
+        
+        # Создаем новую услугу
+        service = Service(
+            title=data.get('title'),
+            category=data.get('category'),
+            duration=data.get('duration'),
+            min_guests=data.get('minGuests'),
+            rating=float(data.get('rating', 5.0)),
+            price=data.get('price'),
+            price_description=data.get('priceDescription'),
+            description=data.get('description'),
+            features=features,
+            subcategories=subcategories,
+            cover_image=data.get('cover_image'),
+            images=images,
+            featured=data.get('featured', False),
+            tags=tags,
+            status=data.get('status', 'active')
+        )
         
         db.session.add(service)
         db.session.commit()
         
+        logger.info(f"Создана новая услуга: {service.title}")
         return jsonify({
             'message': 'Услуга успешно создана',
             'service': service.to_dict()
@@ -185,22 +236,82 @@ def create_service():
         
     except Exception as e:
         db.session.rollback()
+        logger.error(f"Ошибка при создании услуги: {str(e)}")
         return jsonify({'error': f'Ошибка при создании услуги: {str(e)}'}), 500
 
 @services_bp.route('/admin/<int:service_id>', methods=['PUT'])
-@jwt_required()
 def update_service(service_id):
     """Обновить услугу"""
-    service = Service.query.get_or_404(service_id)
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({'error': 'Нет данных'}), 400
-    
     try:
-        service.update_from_dict(data)
+        service = Service.query.get_or_404(service_id)
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'Нет данных'}), 400
+        
+        # Обновляем основные поля
+        if 'title' in data:
+            service.title = data['title']
+        if 'category' in data:
+            service.category = data['category']
+        if 'duration' in data:
+            service.duration = data['duration']
+        if 'rating' in data:
+            service.rating = float(data['rating'])
+        if 'price' in data:
+            service.price = data['price']
+        if 'priceDescription' in data:
+            service.priceDescription = data['priceDescription']
+        if 'description' in data:
+            service.description = data['description']
+        if 'cover_image' in data:
+            service.cover_image = data['cover_image']
+        if 'featured' in data:
+            service.featured = data['featured']
+        if 'status' in data:
+            service.status = data['status']
+        
+        # Обрабатываем изображения
+        if 'images' in data:
+            images = []
+            if isinstance(data['images'], str):
+                images = [img.strip() for img in data['images'].split(',') if img.strip()]
+            elif isinstance(data['images'], list):
+                images = data['images']
+            service.images = images
+        
+        # Обрабатываем особенности
+        if 'features' in data:
+            features = []
+            if isinstance(data['features'], str):
+                features = [f.strip() for f in data['features'].split(',') if f.strip()]
+            elif isinstance(data['features'], list):
+                features = data['features']
+            service.features = features
+        
+        # Обрабатываем подкатегории
+        if 'subcategories' in data:
+            subcategories = []
+            if isinstance(data['subcategories'], str):
+                subcategories = [s.strip() for s in data['subcategories'].split(',') if s.strip()]
+            elif isinstance(data['subcategories'], list):
+                subcategories = data['subcategories']
+            service.subcategories = subcategories
+        
+        # Обрабатываем теги
+        if 'tags' in data:
+            tags = []
+            if isinstance(data['tags'], str):
+                tags = [t.strip() for t in data['tags'].split(',') if t.strip()]
+            elif isinstance(data['tags'], list):
+                tags = data['tags']
+            service.tags = tags
+        
+        service.updated_at = datetime.utcnow()
+        
         db.session.commit()
         
+        logger.info(f"Услуга #{service_id} обновлена")
         return jsonify({
             'message': 'Услуга успешно обновлена',
             'service': service.to_dict()
@@ -208,6 +319,7 @@ def update_service(service_id):
         
     except Exception as e:
         db.session.rollback()
+        logger.error(f"Ошибка при обновлении услуги #{service_id}: {str(e)}")
         return jsonify({'error': f'Ошибка при обновлении услуги: {str(e)}'}), 500
 
 @services_bp.route('/admin/<int:service_id>', methods=['DELETE'])
@@ -225,6 +337,8 @@ def delete_service(service_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Ошибка при удалении услуги: {str(e)}'}), 500
+
+
 
 @services_bp.route('/admin/stats', methods=['GET'])
 @jwt_required()

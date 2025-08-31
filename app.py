@@ -38,10 +38,12 @@ def create_app():
     from routes.company_data import company_data_bp  # Импорт для company_data
     from routes.warehouse import warehouse_bp
     from routes.leads import leads_bp
+    from routes.upload import upload_bp
     # from routes.bot_messages import telegram_bp
     # from routes.telegram_users import telegram_users_bp
     
     app.register_blueprint(leads_bp, url_prefix='/api/leads')
+    app.register_blueprint(upload_bp, url_prefix='/api/upload')
     app.register_blueprint(warehouse_bp, url_prefix='/api/warehouse')
     app.register_blueprint(settings_bp, url_prefix='/api/settings')
     app.register_blueprint(blog_bp, url_prefix='/api/blog')

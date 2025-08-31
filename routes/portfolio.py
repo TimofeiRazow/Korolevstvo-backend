@@ -220,12 +220,67 @@ def get_admin_portfolio():
         logger.error(f"Ошибка при загрузке портфолио для админки: {str(e)}")
         return jsonify({'error': 'Ошибка сервера'}), 500
 
+@portfolio_bp.route('/admin', methods=['GET'])
+def get_portfolio_admin():
+    """Получить портфолио для админ панели"""
+    try:
+        # Фильтры
+        status = request.args.get('status')
+        category = request.args.get('category')
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 20))
+        
+        # Базовый запрос
+        query = Portfolio.query
+        
+        # Применяем фильтры
+        if status and status != 'all':
+            query = query.filter(Portfolio.status == status)
+        
+        if category and category != 'all':
+            query = query.filter(Portfolio.category == category)
+        
+        # Сортировка по дате создания (новые первыми)
+        query = query.order_by(Portfolio.created_at.desc())
+        
+        # Пагинация
+        pagination = query.paginate(
+            page=page, 
+            per_page=per_page, 
+            error_out=False
+        )
+        
+        portfolio_items = [item.to_dict(for_admin=True) for item in pagination.items]
+        
+        return jsonify({
+            'portfolio': portfolio_items,
+            'pagination': {
+                'page': page,
+                'pages': pagination.pages,
+                'per_page': per_page,
+                'total': pagination.total
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения портфолио для админ панели: {str(e)}")
+        return jsonify({'error': 'Ошибка при загрузке портфолио'}), 500
 
 @portfolio_bp.route('/admin', methods=['POST'])
 def create_portfolio_item():
     """Создать новый проект в портфолио"""
     try:
         data = request.get_json()
+        
+        # Обрабатываем изображения
+        images = []
+        if data.get('images'):
+            # Если переданы URL изображений, сохраняем их как есть
+            if isinstance(data['images'], list):
+                images = data['images']
+            elif isinstance(data['images'], str):
+                # Если передана строка, разбиваем по запятым
+                images = [img.strip() for img in data['images'].split(',') if img.strip()]
         
         # Создаем новый проект
         portfolio_item = Portfolio(
@@ -240,15 +295,12 @@ def create_portfolio_item():
             guests=data.get('guests'),
             rating=data.get('rating', 5),
             tags=data.get('tags', []),
-            images=data.get('images', []),
+            images=images,
             cover_image=data.get('cover_image'),
             packages=data.get('packages', []),
-            featured=data.get('featured', False)
+            featured=data.get('featured', False),
+            photos_count=len(images) if images else 0
         )
-        
-        # Обновляем количество фото
-        if portfolio_item.images:
-            portfolio_item.photos_count = len(portfolio_item.images)
         
         db.session.add(portfolio_item)
         db.session.commit()
@@ -264,7 +316,6 @@ def create_portfolio_item():
         logger.error(f"Ошибка при создании проекта: {str(e)}")
         return jsonify({'error': 'Ошибка при создании проекта'}), 500
 
-
 @portfolio_bp.route('/admin/<int:portfolio_id>', methods=['PUT'])
 def update_portfolio_item(portfolio_id):
     """Обновить проект портфолио"""
@@ -272,31 +323,47 @@ def update_portfolio_item(portfolio_id):
         item = Portfolio.query.get_or_404(portfolio_id)
         data = request.get_json()
         
-        # Обновляем поля
-        item.title = data.get('title', item.title)
-        item.category = data.get('category', item.category)
-        item.description = data.get('description', item.description)
-        item.budget = data.get('budget', item.budget)
-        item.client = data.get('client', item.client)
-        item.status = data.get('status', item.status)
-        item.location = data.get('location', item.location)
-        item.guests = data.get('guests', item.guests)
-        item.rating = data.get('rating', item.rating)
-        item.tags = data.get('tags', item.tags)
-        item.images = data.get('images', item.images)
-        item.cover_image = data.get('cover_image', item.cover_image)
-        item.packages = data.get('packages', item.packages)
-        item.featured = data.get('featured', item.featured)
+        # Обрабатываем изображения
+        if 'images' in data:
+            images = []
+            if isinstance(data['images'], list):
+                images = data['images']
+            elif isinstance(data['images'], str):
+                images = [img.strip() for img in data['images'].split(',') if img.strip()]
+            item.images = images
+            item.photos_count = len(images)
+        
+        # Обновляем остальные поля
+        if 'title' in data:
+            item.title = data['title']
+        if 'category' in data:
+            item.category = data['category']
+        if 'description' in data:
+            item.description = data['description']
+        if 'budget' in data:
+            item.budget = data['budget']
+        if 'client' in data:
+            item.client = data['client']
+        if 'status' in data:
+            item.status = data['status']
+        if 'location' in data:
+            item.location = data['location']
+        if 'guests' in data:
+            item.guests = data['guests']
+        if 'rating' in data:
+            item.rating = data['rating']
+        if 'tags' in data:
+            item.tags = data['tags']
+        if 'cover_image' in data:
+            item.cover_image = data['cover_image']
+        if 'packages' in data:
+            item.packages = data['packages']
+        if 'featured' in data:
+            item.featured = data['featured']
         
         # Обновляем дату если передана
         if data.get('date'):
             item.date = datetime.strptime(data.get('date'), '%Y-%m-%d').date()
-        
-        # Обновляем количество фото
-        if item.images:
-            item.photos_count = len(item.images)
-        else:
-            item.photos_count = 0
         
         item.updated_at = datetime.utcnow()
         

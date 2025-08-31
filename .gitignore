@@ -11,3 +11,4 @@ instance/korolevstvo_chudes.db
 /services/telegram/venv
 /services/telegram/__pycache__
 .env
+/static/images
