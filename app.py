@@ -16,7 +16,7 @@ jwt = JWTManager()
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
-    CORS(app, supports_credentials=True)
+    CORS(app, supports_credentials=True, allowed_origins=app.config['CORS_ORIGINS'])
     
     # Инициализация расширений
     db.init_app(app)

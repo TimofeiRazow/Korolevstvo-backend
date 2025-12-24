@@ -11,7 +11,7 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # Настройки CORS
-    CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000", "https://prazdnikvdom.kz"]
     
     # Настройки JWT для админки
     JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or 'jwt-secret-change-in-production'
