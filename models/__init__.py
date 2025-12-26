@@ -1070,6 +1070,232 @@ class BlogComment(db.Model):
         }
 # Исправленная модель TelegramUser для models/__init__.py
 
+# Добавить в models/__init__.py после класса BlogComment (строка 1070)
+
+class Animator(db.Model):
+    """Модель аниматоров и персонажей для детских праздников"""
+    __tablename__ = 'animators'
+    
+    # Основные поля
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)  # Имя персонажа
+    title = db.Column(db.String(300), nullable=False)  # Заголовок для SEO
+    slug = db.Column(db.String(250), unique=True, nullable=False, index=True)  # URL slug
+    
+    # Категория и классификация
+    category = db.Column(db.String(50), nullable=False, index=True)  # superheroes, princesses, cartoons, etc.
+    age_range = db.Column(db.String(50), nullable=False)  # "3-5 лет", "6-8 лет", "9-12 лет"
+    
+    # Описание и контент
+    description = db.Column(db.Text, nullable=False)  # Основное описание
+    program_includes = db.Column(db.Text)  # Что входит в программу
+    suitable_for = db.Column(db.Text)  # Для каких мероприятий подходит
+    advantages = db.Column(db.Text)  # Преимущества
+    related_characters = db.Column(db.String(500))  # Похожие персонажи
+    
+    # Медиа
+    image = db.Column(db.String(500))  # URL изображения
+    gallery = db.Column(db.JSON)  # Дополнительные фото
+    
+    # Коммерческая информация
+    price = db.Column(db.String(100), nullable=False)  # "от 25,000 ₸"
+    duration = db.Column(db.String(50), nullable=False)  # "90 минут"
+    
+    # Статус и популярность
+    popular = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    active = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    featured = db.Column(db.Boolean, default=False)
+    
+    # Метрики
+    views_count = db.Column(db.Integer, default=0)
+    bookings_count = db.Column(db.Integer, default=0)
+    rating = db.Column(db.Float, default=5.0)
+    
+    # SEO
+    meta_title = db.Column(db.String(200))
+    meta_description = db.Column(db.String(300))
+    meta_keywords = db.Column(db.String(500))
+    
+    # Временные метки
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    def __init__(self, **kwargs):
+        super(Animator, self).__init__(**kwargs)
+        if not self.slug and self.name:
+            self.slug = self.generate_slug(self.name)
+    
+    @staticmethod
+    def generate_slug(name):
+        """Генерация slug из имени"""
+        import re
+        translit_dict = {
+            'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
+            'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+            'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+            'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'sch',
+            'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+            ' ': '-', '_': '-'
+        }
+        slug = name.lower()
+        for ru, en in translit_dict.items():
+            slug = slug.replace(ru, en)
+        slug = re.sub(r'[^a-z0-9\-]', '', slug)
+        slug = re.sub(r'\-+', '-', slug)
+        return slug.strip('-')
+    
+    def to_dict(self, include_sensitive=False):
+        """Преобразование в словарь для API"""
+        data = {
+            'id': self.id,
+            'name': self.name,
+            'title': self.title,
+            'slug': self.slug,
+            'category': self.category,
+            'age_range': self.age_range,
+            'description': self.description,
+            'program_includes': self.program_includes,
+            'suitable_for': self.suitable_for,
+            'advantages': self.advantages,
+            'related_characters': self.related_characters,
+            'image': self.image,
+            'gallery': self.gallery or [],
+            'price': self.price,
+            'duration': self.duration,
+            'popular': self.popular,
+            'active': self.active,
+            'featured': self.featured,
+            'views_count': self.views_count,
+            'bookings_count': self.bookings_count,
+            'rating': self.rating,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+        if include_sensitive:
+            data.update({
+                'meta_title': self.meta_title,
+                'meta_description': self.meta_description,
+                'meta_keywords': self.meta_keywords
+            })
+        return data
+    
+    def update_from_dict(self, data):
+        """Обновление модели из словаря"""
+        if 'name' in data:
+            self.name = data['name'].strip()
+        if 'title' in data:
+            self.title = data['title'].strip()
+        if 'category' in data:
+            self.category = data['category']
+        if 'age_range' in data:
+            self.age_range = data['age_range']
+        if 'description' in data:
+            self.description = data['description']
+        if 'program_includes' in data:
+            self.program_includes = data['program_includes']
+        if 'suitable_for' in data:
+            self.suitable_for = data['suitable_for']
+        if 'advantages' in data:
+            self.advantages = data['advantages']
+        if 'related_characters' in data:
+            self.related_characters = data['related_characters']
+        if 'image' in data:
+            self.image = data['image']
+        if 'gallery' in data:
+            if isinstance(data['gallery'], str):
+                self.gallery = [g.strip() for g in data['gallery'].split(',') if g.strip()]
+            else:
+                self.gallery = data['gallery']
+        if 'price' in data:
+            self.price = data['price']
+        if 'duration' in data:
+            self.duration = data['duration']
+        if 'popular' in data:
+            self.popular = bool(data['popular'])
+        if 'active' in data:
+            self.active = bool(data['active'])
+        if 'featured' in data:
+            self.featured = bool(data['featured'])
+        if 'meta_title' in data:
+            self.meta_title = data['meta_title']
+        if 'meta_description' in data:
+            self.meta_description = data['meta_description']
+        if 'meta_keywords' in data:
+            self.meta_keywords = data['meta_keywords']
+        if 'slug' in data and data['slug']:
+            self.slug = data['slug']
+        elif 'name' in data:
+            self.slug = self.generate_slug(data['name'])
+        self.updated_at = datetime.utcnow()
+    
+    def increment_views(self):
+        """Увеличить счетчик просмотров"""
+        self.views_count = (self.views_count or 0) + 1
+        db.session.commit()
+    
+    def increment_bookings(self):
+        """Увеличить счетчик бронирований"""
+        self.bookings_count = (self.bookings_count or 0) + 1
+        db.session.commit()
+    
+    @classmethod
+    def get_by_category(cls, category, active_only=True):
+        """Получить аниматоров по категории"""
+        query = cls.query.filter(cls.category == category)
+        if active_only:
+            query = query.filter(cls.active == True)
+        return query.order_by(cls.popular.desc(), cls.name).all()
+    
+    @classmethod
+    def get_popular(cls, limit=6, active_only=True):
+        """Получить популярных аниматоров"""
+        query = cls.query.filter(cls.popular == True)
+        if active_only:
+            query = query.filter(cls.active == True)
+        return query.order_by(cls.bookings_count.desc()).limit(limit).all()
+    
+    @classmethod
+    def get_by_slug(cls, slug, active_only=True):
+        """Получить аниматора по slug"""
+        query = cls.query.filter(cls.slug == slug)
+        if active_only:
+            query = query.filter(cls.active == True)
+        return query.first()
+    
+    @classmethod
+    def search(cls, query_text, active_only=True):
+        """Поиск аниматоров"""
+        search_filter = f"%{query_text}%"
+        query = cls.query.filter(
+            db.or_(
+                cls.name.ilike(search_filter),
+                cls.description.ilike(search_filter),
+                cls.category.ilike(search_filter)
+            )
+        )
+        if active_only:
+            query = query.filter(cls.active == True)
+        return query.order_by(cls.popular.desc()).all()
+    
+    @classmethod
+    def get_stats(cls):
+        """Получить статистику"""
+        total = cls.query.count()
+        active = cls.query.filter(cls.active == True).count()
+        popular = cls.query.filter(cls.popular == True).count()
+        categories = db.session.query(
+            cls.category,
+            func.count(cls.id).label('count')
+        ).filter(cls.active == True).group_by(cls.category).all()
+        return {
+            'total': total,
+            'active': active,
+            'popular': popular,
+            'total_views': db.session.query(func.sum(cls.views_count)).scalar() or 0,
+            'total_bookings': db.session.query(func.sum(cls.bookings_count)).scalar() or 0,
+            'categories': [{'name': cat, 'count': count} for cat, count in categories]
+        }
+
 class TelegramUser(db.Model):
     """Модель пользователей Telegram бота"""
     __tablename__ = 'telegram_users'

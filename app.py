@@ -4,7 +4,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager
 from config import Config
-from models import db, Admin, BlogPost, Settings  # Добавить BlogPost
+from models import db, Admin, BlogPost, Settings, Animator
 from flask_jwt_extended.exceptions import JWTExtendedException
 from werkzeug.exceptions import HTTPException
 import click  # Добавить для CLI команд
@@ -16,6 +16,7 @@ jwt = JWTManager()
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+    app.url_map.strict_slashes = False
     CORS(app, supports_credentials=True, allowed_origins=app.config['CORS_ORIGINS'])
     
     # Инициализация расширений
@@ -39,6 +40,7 @@ def create_app():
     from routes.warehouse import warehouse_bp
     from routes.leads import leads_bp
     from routes.upload import upload_bp
+    from routes.animators import animators_bp
     # from routes.bot_messages import telegram_bp
     # from routes.telegram_users import telegram_users_bp
     
@@ -56,7 +58,8 @@ def create_app():
     app.register_blueprint(admin_bp, url_prefix='/api/admin')
     app.register_blueprint(analytics_bp, url_prefix='/api/analytics')
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
-    app.register_blueprint(company_data_bp, url_prefix='/api/company_data')  # Регистрация blueprint для company_data
+    app.register_blueprint(company_data_bp, url_prefix='/api/company_data')
+    app.register_blueprint(animators_bp, url_prefix='/api/animators')
     
     # Главная страница API
     @app.route('/api')
