@@ -169,7 +169,7 @@ class Booking(db.Model):
                 'service_id': self.service_id,
                 'service_title': self.service_title if self.service_title else None,
                 'event_date': self.event_date.isoformat() if self.event_date else None,
-                'event_time': self.event_time.isoformat() if self.event_time else None,
+                'event_time': self.event_time.strftime('%H:%M') if self.event_time else None,
                 'guests_count': self.guests_count,
                 'budget': self.budget,
                 'location': self.location,

@@ -83,6 +83,23 @@ def create_app():
             'telegram_bot': '@korolevstvo_chudes_bot'
         })
 
+    # Health check endpoint для Docker
+    @app.route('/api/health')
+    def health_check():
+        try:
+            # Проверяем подключение к базе данных
+            db.session.execute(db.text('SELECT 1'))
+            db_status = 'healthy'
+        except Exception as e:
+            db_status = f'unhealthy: {str(e)}'
+
+        return jsonify({
+            'status': 'healthy' if db_status == 'healthy' else 'degraded',
+            'database': db_status,
+            'version': '1.0.0',
+            'service': 'korolevstvo-backend'
+        }), 200 if db_status == 'healthy' else 503
+
     return app
 
 # ДОБАВИТЬ: Утилитные функции для блога
