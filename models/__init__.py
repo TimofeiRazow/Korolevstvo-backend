@@ -3123,3 +3123,158 @@ def migrate_bookings_to_leads():
     except Exception as e:
         db.session.rollback()
         print(f"❌ Ошибка миграции заявок в лиды: {e}")
+
+# models/show.py - Модель для шоу-программ
+class Show(db.Model):
+    __tablename__ = 'shows'
+
+    # Основные поля
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    category = db.Column(db.String(50), nullable=False)  # fire, music, dance, magic, acrobatic, light
+    duration = db.Column(db.String(50))  # например: "15-20 минут"
+    min_audience = db.Column(db.String(50))  # например: "50 человек"
+    rating = db.Column(db.Float, default=5.0)
+    price = db.Column(db.String(50))  # например: "120,000 ₸"
+    price_description = db.Column(db.String(100))  # например: "за выступление"
+    description = db.Column(db.Text)
+
+    # Особенности и характеристики
+    features = db.Column(db.JSON)  # Список особенностей: ['Пиротехника', 'Акробатика', ...]
+    suitable_for = db.Column(db.JSON)  # Подходит для: ['Корпоративы', 'Свадьбы', ...]
+
+    # Медиа контент
+    images = db.Column(db.JSON)  # Список изображений для галереи
+    videos = db.Column(db.JSON)  # Список видео (YouTube embed URLs)
+    cover_image = db.Column(db.String(500))  # URL обложки
+
+    # Метаданные
+    featured = db.Column(db.Boolean, default=False)  # Популярное шоу
+    tags = db.Column(db.JSON)  # Теги для поиска: ['огонь', 'пиротехника', ...]
+    status = db.Column(db.String(20), default='active')  # active, inactive, draft
+
+    # Счетчики
+    views_count = db.Column(db.Integer, default=0)  # Счетчик просмотров
+    bookings_count = db.Column(db.Integer, default=0)  # Счетчик бронирований
+
+    # Временные метки
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        """Преобразование модели в словарь для API"""
+        return {
+            'id': self.id,
+            'title': self.title,
+            'category': self.category,
+            'duration': self.duration,
+            'minAudience': self.min_audience,
+            'rating': self.rating,
+            'price': self.price,
+            'priceDescription': self.price_description,
+            'description': self.description,
+            'features': self.features or [],
+            'suitableFor': self.suitable_for or [],
+            'images': self.images or [],
+            'videos': self.videos or [],
+            'coverImage': self.cover_image,
+            'featured': self.featured,
+            'tags': self.tags or [],
+            'status': self.status,
+            'viewsCount': self.views_count,
+            'bookingsCount': self.bookings_count,
+            'createdAt': self.created_at.isoformat() if self.created_at else None,
+            'updatedAt': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+    def update_from_dict(self, data):
+        """Обновление модели из словаря данных"""
+        # Обновляем основные поля
+        if 'title' in data:
+            self.title = data['title']
+        if 'category' in data:
+            self.category = data['category']
+        if 'duration' in data:
+            self.duration = data['duration']
+        if 'minAudience' in data:
+            self.min_audience = data['minAudience']
+        if 'rating' in data:
+            self.rating = float(data['rating'])
+        if 'price' in data:
+            self.price = data['price']
+        if 'priceDescription' in data:
+            self.price_description = data['priceDescription']
+        if 'description' in data:
+            self.description = data['description']
+        if 'coverImage' in data:
+            self.cover_image = data['coverImage']
+        if 'featured' in data:
+            self.featured = bool(data['featured'])
+        if 'status' in data:
+            self.status = data['status']
+
+        # Обрабатываем массивы
+        if 'features' in data:
+            self.features = data['features'] if isinstance(data['features'], list) else []
+        if 'suitableFor' in data:
+            self.suitable_for = data['suitableFor'] if isinstance(data['suitableFor'], list) else []
+        if 'images' in data:
+            self.images = data['images'] if isinstance(data['images'], list) else []
+        if 'videos' in data:
+            self.videos = data['videos'] if isinstance(data['videos'], list) else []
+        if 'tags' in data:
+            self.tags = data['tags'] if isinstance(data['tags'], list) else []
+
+        self.updated_at = datetime.utcnow()
+
+    @classmethod
+    def get_by_category(cls, category, status='active'):
+        """Получить шоу по категории"""
+        query = cls.query
+        if category and category != 'all':
+            query = query.filter(cls.category == category)
+        if status:
+            query = query.filter(cls.status == status)
+        return query.order_by(cls.featured.desc(), cls.created_at.desc()).all()
+
+    @classmethod
+    def get_featured(cls, limit=6, status='active'):
+        """Получить популярные шоу"""
+        query = cls.query.filter(cls.featured == True)
+        if status:
+            query = query.filter(cls.status == status)
+        return query.order_by(cls.rating.desc(), cls.views_count.desc()).limit(limit).all()
+
+    @classmethod
+    def get_stats(cls):
+        """Получить статистику шоу"""
+        total = cls.query.count()
+        active = cls.query.filter(cls.status == 'active').count()
+        featured = cls.query.filter(cls.featured == True).count()
+        total_views = db.session.query(func.sum(cls.views_count)).scalar() or 0
+        total_bookings = db.session.query(func.sum(cls.bookings_count)).scalar() or 0
+
+        # Статистика по категориям
+        categories_stats = db.session.query(
+            cls.category,
+            func.count(cls.id).label('count')
+        ).group_by(cls.category).all()
+
+        return {
+            'total': total,
+            'active': active,
+            'featured': featured,
+            'total_views': total_views,
+            'total_bookings': total_bookings,
+            'categories': [{'category': cat, 'count': count} for cat, count in categories_stats]
+        }
+
+    def increment_views(self):
+        """Увеличить счетчик просмотров"""
+        self.views_count = (self.views_count or 0) + 1
+        db.session.commit()
+
+    def increment_bookings(self):
+        """Увеличить счетчик бронирований"""
+        self.bookings_count = (self.bookings_count or 0) + 1
+        db.session.commit()

@@ -41,6 +41,7 @@ def create_app():
     from routes.leads import leads_bp
     from routes.upload import upload_bp
     from routes.animators import animators_bp
+    from routes.shows import shows_bp
     # from routes.bot_messages import telegram_bp
     # from routes.telegram_users import telegram_users_bp
     
@@ -60,6 +61,7 @@ def create_app():
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(company_data_bp, url_prefix='/api/company_data')
     app.register_blueprint(animators_bp, url_prefix='/api/animators')
+    app.register_blueprint(shows_bp, url_prefix='/api/shows')
     
     # Главная страница API
     @app.route('/api')

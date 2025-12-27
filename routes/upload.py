@@ -78,13 +78,19 @@ def upload_image():
         # Сбрасываем позицию в файле
         file.seek(0)
         
-        # Проверяем расширение
+        # Проверяем расширение ДО secure_filename (важно!)
         if not allowed_file(file.filename):
             return jsonify({'error': 'Недопустимый тип файла'}), 400
-        
-        # Создаем безопасное имя файла
-        filename = secure_filename(file.filename)
-        file_extension = filename.rsplit('.', 1)[1].lower()
+
+        # Получаем расширение из оригинального имени файла
+        if '.' not in file.filename:
+            return jsonify({'error': 'Файл должен иметь расширение'}), 400
+
+        # Сохраняем оригинальное имя для ответа
+        original_filename = secure_filename(file.filename)
+        file_extension = file.filename.rsplit('.', 1)[1].lower()
+
+        # Создаем уникальное имя файла с правильным расширением
         unique_filename = f"{uuid.uuid4().hex}.{file_extension}"
         
         # Создаем директории если не существуют
@@ -118,7 +124,7 @@ def upload_image():
             'url': image_url,
             'thumbnail_url': thumbnail_url,
             'filename': unique_filename,
-            'original_name': filename
+            'original_name': original_filename
         }), 201
         
     except Exception as e:
@@ -160,10 +166,17 @@ def upload_multiple_images():
                 if not allowed_file(file.filename):
                     errors.append(f'{file.filename}: Недопустимый тип файла')
                     continue
-                
-                # Сохраняем файл
-                filename = secure_filename(file.filename)
-                file_extension = filename.rsplit('.', 1)[1].lower()
+
+                # Получаем расширение из оригинального имени файла ДО secure_filename
+                if '.' not in file.filename:
+                    errors.append(f'{file.filename}: Файл должен иметь расширение')
+                    continue
+
+                # Сохраняем оригинальное имя для ответа
+                original_filename = secure_filename(file.filename)
+                file_extension = file.filename.rsplit('.', 1)[1].lower()
+
+                # Создаем уникальное имя файла
                 unique_filename = f"{uuid.uuid4().hex}.{file_extension}"
                 
                 file_path = os.path.join(images_dir, unique_filename)
@@ -186,7 +199,7 @@ def upload_multiple_images():
                     'url': image_url,
                     'thumbnail_url': thumbnail_url,
                     'filename': unique_filename,
-                    'original_name': filename
+                    'original_name': original_filename
                 })
                 
             except Exception as e:
