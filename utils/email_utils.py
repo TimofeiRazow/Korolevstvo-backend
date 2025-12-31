@@ -83,7 +83,7 @@ def send_booking_notification(booking, is_quick=False):
         <p><strong>Номер заявки:</strong> #{booking.id}</p>
         <p><strong>Услуга:</strong> {service_name}</p>
         <p>С уважением,<br>Команда "Королевство Чудес"</p>
-        <p>Телефон: +7 (7152) 123-456</p>
+        <p>Телефон: 8 (705) 519 5222</p>
         """
         send_email(booking.email, client_subject, client_html)
 

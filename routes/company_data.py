@@ -7,8 +7,8 @@ company_info = {
     # Компания
     "companyName": "Королевство Чудес",
     "companyEmail": "info@prazdnikvdom.kz",
-    "companyPhone": "+7 (777) 123-45-67",
-    "whatsappPhone": "+7 (777) 987-65-43",
+    "companyPhone": "8 (705) 519 5222",
+    "whatsappPhone": "8 (705) 519 5222",
     "companyAddress": "г. Петропавловск, ул. Ленина, 123",
     "companyDescription": "Профессиональная организация праздников и мероприятий",
 

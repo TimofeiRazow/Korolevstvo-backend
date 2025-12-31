@@ -81,7 +81,7 @@ class Config:
         'instagram': 'https://instagram.com/korolevstvo_chudes',
         'vk': 'https://vk.com/korolevstvo_chudes',
         'telegram': 'https://t.me/korolevstvo_chudes_bot',
-        'whatsapp': '+77051234567',
+        'whatsapp': '8 (705) 519 5222',
         'youtube': 'https://youtube.com/@korolevstvo_chudes'
     }
     

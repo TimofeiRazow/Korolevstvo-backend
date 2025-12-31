@@ -550,8 +550,8 @@ class Settings(db.Model):
             # Компания
             ('company_name', 'Королевство Чудес', 'string', 'company', 'Название компании'),
             ('company_email', 'info@prazdnikvdom.kz', 'string', 'company', 'Email компании'),
-            ('company_phone', '+7 (777) 123-45-67', 'string', 'company', 'Основной телефон'),
-            ('whatsapp_phone', '+7 (777) 987-65-43', 'string', 'company', 'WhatsApp номер'),
+            ('company_phone', '8 (705) 519 5222', 'string', 'company', 'Основной телефон'),
+            ('whatsapp_phone', '8 (705) 519 5222', 'string', 'company', 'WhatsApp номер'),
             ('company_address', 'г. Петропавловск, ул. Ленина, 123', 'string', 'company', 'Адрес компании'),
             ('company_description', 'Профессиональная организация праздников и мероприятий', 'string', 'company', 'Описание компании'),
             
