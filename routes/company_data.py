@@ -9,7 +9,7 @@ company_info = {
     "companyEmail": "info@prazdnikvdom.kz",
     "companyPhone": "8 (705) 519 5222",
     "whatsappPhone": "8 (705) 519 5222",
-    "companyAddress": "г. Петропавловск, ул. Ленина, 123",
+    "companyAddress": "г. Петропавловск, ул. Магжана Жумабаева 107",
     "companyDescription": "Профессиональная организация праздников и мероприятий",
 
     # Соцсети
